@@ -464,8 +464,8 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			CONTEXT ctx = {0};
 			ctx.ContextFlags = CONTEXT_ALL;
 			GetThreadContext(thread, &ctx);
-			ctx.EFlags |= 0x100;
-			ctx.EIP--;
+			ctx.EFlags |= 0x100; //флаг процессора на трассирование
+			ctx.EIP--;//возвращение на инструкцию назад
 			SetThreadContext(thread, &ctx);
 			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
 			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
@@ -664,11 +664,11 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				PrintRetInstruction(ctx, (void*)info->ExceptionRecord.ExceptionAddress, assembly_string);
 			}
 
-			if (assembly_string.rfind("DIV", 0) == 0 || assembly_string.rfind("IDIV", 0) == 0) {
+			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
 				std::cout << "PID: " << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
-				PrintDiv(assembly_string, &ctx);
+				PrintRor(assembly_string, &ctx);
 				PrintRegisterContext(&ctx);
 			}
 			delete[] buf;
@@ -719,11 +719,20 @@ void Debugger::SetBreakpoint(void* addr, BreakPointType type, BreakPoint* prev) 
 
 void Debugger::SetTracingFunctionsBreakpoints() {
 	for (const auto& [name, _] : tracing_functions_with_args) {
-		FARPROC address = GetProcAddress(GetModuleHandle(L"Kernel32.dll"), name.c_str());
-		SetBreakpoint((void*)address, TRACING_FUNCTION_BREAKPOINT, nullptr);
-		tracing_functions[address] = name;
-		std::cout << "Found function " << name << " @ " << address << std::endl;
-		std::cout << "Breakpoint set!" << std::endl;
+		FARPROC kernel_address = GetProcAddress(GetModuleHandle(L"Kernel32.dll"), name.c_str());
+		FARPROC nt_address = GetProcAddress(GetModuleHandle(L"Ntdll.dll"), name.c_str());
+		if (kernel_address) {
+			SetBreakpoint((void*)kernel_address, TRACING_FUNCTION_BREAKPOINT, nullptr);
+			tracing_functions[kernel_address] = name;
+			std::cout << "Found function " << name << " @ " << kernel_address << std::endl;
+			std::cout << "Breakpoint set!" << std::endl;
+		}
+		if (nt_address) {
+			SetBreakpoint((void*)nt_address, TRACING_FUNCTION_BREAKPOINT, nullptr);
+			tracing_functions[nt_address] = name;
+			std::cout << "Found function " << name << " @ " << nt_address << std::endl;
+			std::cout << "Breakpoint set!" << std::endl;
+		}
 	}
 }
 
@@ -859,8 +868,8 @@ void Debugger::PrintCallingStack() {
 	}
 }
 
-void Debugger::PrintDiv(const std::string& str, const CONTEXT* ctx) {
-	const std::regex checker = std::regex(R"([DIV]+\s+(.*)(0X\d*)?(.*))");
+void Debugger::PrintRor(const std::string& str, const CONTEXT* ctx) {
+	const std::regex checker = std::regex(R"(RO[RL]\s+.*(0x\d*)?(.*))");
 	std::smatch matches;
 
 	if (str.find('[') != std::string::npos) {
@@ -953,9 +962,16 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 		);
 		std::string type = type_with_name[0];
 		const std::string argument_name = type_with_name[1];
-		bool is_pointer = type.rfind("LP", 0) == 0;
-		if (is_pointer) {
+		bool is_lpointer = type.rfind("LP", 0) == 0;
+		bool is_pointer = type.rfind("P", 0) == 0;
+		if (is_lpointer) {
 			type = type.substr(2, type.length());
+		}
+		if (is_pointer) {
+			if (strcmp(type.c_str(), "PVOID"))
+				continue;
+			else 
+				type = type.substr(1, type.length());
 		}
 		const auto& [_, members_and_treating] = *entities.find(type);
 		const auto& members = members_and_treating.first;
@@ -964,7 +980,7 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 		switch (treating) {
 		case treat_variant::number:
 		{
-			Dword number, bytes_read;
+			Dword number;
 			std::cout << type << " " << argument_name << " = ";
 #ifdef _WIN64
 			switch (current_argument_number) {
@@ -1003,16 +1019,29 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 			}
 			}
 #else
-			size_t value;
 			ReadProcessMemory(
 				this->debugee_handle,
 				(LPCVOID)(ctx.ESP + (current_argument_number) * sizeof(size_t)),
-				&value,
+				&number,
 				sizeof(size_t),
 				nullptr
 			);
-			std::cout << value << std::endl;
+			std::cout << number << std::endl;
 #endif // _WIN64
+			break;
+		}
+		case treat_variant::void_t:
+		{
+			std::cout << type << " " << argument_name << " = ";
+			PVOID value;
+			ReadProcessMemory(
+				this->debugee_handle,
+				(LPCVOID)(ctx.ESP + (current_argument_number) * sizeof(PVOID)),
+				&value,
+				sizeof(PVOID),
+				nullptr
+			);
+			std::cout << value << std::endl;
 			break;
 		}
 		default:

@@ -83,51 +83,13 @@ struct CallInformation {
 };
 
 const std::map<std::string, std::vector<std::string>> tracing_functions_with_args = {
-	{"CreateProcessA", {
-		"LPCSTR lpApplicationName", //done
-		"LPSTR lpCommandLine", //done
-		"LPSECURITY_ATTRIBUTES lpProcessAttributes", //done
-		"LPSECURITY_ATTRIBUTES lpThreadAttributes", //done
-		"BOOL bInheritHandles", //done
-		"DWORD dwCreationFlags", //done
-		"LPVOID lpEnvironment",
-		"LPCSTR lpCurrentDirectory", //done
-		"LPSTARTUPINFOA lpStartupInfo", //done
-		"LPPROCESS_INFORMATION lpProcessInformation" //done
-}},
-	{"CreateProcessW", {
-		"LPCWSTR lpApplicationName", //done
-		"LPWSTR lpCommandLine", //done
-		"LPSECURITY_ATTRIBUTES lpProcessAttributes", //done
-		"LPSECURITY_ATTRIBUTES lpThreadAttributes", //done
-		"BOOL bInheritHandles", //done
-		"DWORD dwCreationFlags", //done
-		"LPVOID lpEnvironment",
-		"LPCWSTR lpCurrentDirectory", //done
-		"LPSTARTUPINFOW lpStartupInfo", //done
-		"LPPROCESS_INFORMATION lpProcessInformation" //done
-}},
-	{"CreateProcessAsUserA", {
-		"HANDLE hToken", //done
-		"LPCSTR lpApplicationName", //done
-		"LPSTR lpCommandLine", //done
-		"LPSECURITY_ATTRIBUTES lpProcessAttributes", //done
-		"LPSECURITY_ATTRIBUTES lpThreadAttributes", //done
-		"BOOL bInheritHandles", //done
-		"DWORD dwCreationFlags", //done
-		"LPVOID lpEnvironment",
-		"LPCSTR lpCurrentDirectory", //done
-		"LPSTARTUPINFOA lpStartupInfo", //done
-		"LPPROCESS_INFORMATION lpProcessInformation" //done
-}},
-	{"ExitProcess", {
-		"UINT uExitCode", //done
-}},
-	{"TerminateProcess", {
-		"HANDLE hProcess", //done
-		"UINT uExitCode", //done
-}}
-};
+	{"ZwQuerySystemInformation", {
+		"SYSTEM_INFORMATION_CLASS SystemInformationClass",
+		"PVOID SystemInformation",
+		"ULONG SystemInformationLength", 
+		"PULONG ReturnLength", 
+	}}
+}; 
 
 enum class treat_variant {
 	entity,
@@ -135,68 +97,14 @@ enum class treat_variant {
 	string,
 	wstring,
 	boolean,
-	byte
+	byte,
+	void_t
 };
 
 const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> entities = {
-	{"HANDLE", {{}, treat_variant::number}},
-	{"UINT", {{}, treat_variant::number}},
-	{"CSTR", {{}, treat_variant::string}},
-	{"DWORD", {{}, treat_variant::number}},
-	{"BOOL", {{}, treat_variant::boolean}},
-	{"BYTE", {{}, treat_variant::byte}},
-	{"LPCWSTR", {{}, treat_variant::wstring}},
-	{"PROCESS_INFORMATION", {{
-		"HANDLE hProcess",
-		"HANDLE hThread",
-		"DWORD  dwProcessId",
-		"DWORD  dwThreadId"
-	}, treat_variant::entity}},
-	{"STARTUPINFOA", {{
-		"DWORD  cb",
-		"LPSTR  lpReserved",
-		"LPSTR  lpDesktop",
-		"LPSTR  lpTitle",
-		"DWORD  dwX",
-		"DWORD  dwY",
-		"DWORD  dwXSize",
-		"DWORD  dwYSize",
-		"DWORD  dwXCountChars",
-		"DWORD  dwYCountChars",
-		"DWORD  dwFillAttribute",
-		"DWORD  dwFlags",
-		"WORD   wShowWindow",
-		"WORD   cbReserved2",
-		"LPBYTE lpReserved2",
-		"HANDLE hStdInput",
-		"HANDLE hStdOutput",
-		"HANDLE hStdError"
-	}, treat_variant::entity}},
-	{"SECURITY_ATTRIBUTES", {{
-		"DWORD  nLength",
-		"LPVOID lpSecurityDescriptor",
-		"BOOL   bInheritHandle",
-	}, treat_variant::entity}},
-	{"STARTUPINFOW", {{
-		"DWORD  cb",
-		"LPWSTR lpReserved",
-		"LPWSTR lpDesktop",
-		"LPWSTR lpTitle",
-		"DWORD  dwX",
-		"DWORD  dwY",
-		"DWORD  dwXSize",
-		"DWORD  dwYSize",
-		"DWORD  dwXCountChars",
-		"DWORD  dwYCountChars",
-		"DWORD  dwFillAttribute",
-		"DWORD  dwFlags",
-		"WORD   wShowWindow",
-		"WORD   cbReserved2",
-		"LPBYTE lpReserved2",
-		"HANDLE hStdInput",
-		"HANDLE hStdOutput",
-		"HANDLE hStdError",
-	}, treat_variant::entity}}
+	{"SYSTEM_INFORMATION_CLASS", {{}, treat_variant::number}},
+	{"PVOID", {{}, treat_variant::void_t}},
+	{"ULONG", {{}, treat_variant::number}},
 };
 
 /*
@@ -256,7 +164,7 @@ private:
 	void PrintRetInstruction(CONTEXT ctx, void* address, const std::string& inst);
 	void PrintCallingStack();
 	void AddCallingStackItem(const std::string call_instrtuction, const Dword address_of_call_inst);
-	void PrintDiv(const std::string& str, const CONTEXT* ctx);
+	void PrintRor(const std::string& str, const CONTEXT* ctx);
 	void PrintTopItemStackInfo();
 
 	void ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::string& name);
