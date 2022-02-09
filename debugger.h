@@ -24,6 +24,8 @@
 #include "Command.h"
 #include "parser.h"
 #include "disas.h"
+#include <winternl.h>
+
 
 
 typedef unsigned long long Dword;
@@ -91,20 +93,92 @@ const std::map<std::string, std::vector<std::string>> tracing_functions_with_arg
 	}}
 }; 
 
+const std::map<int, std::string> id_system_information_class = {
+	{0, "SYSTEM_BASIC_INFORMATION"},
+	{2, "SYSTEM_PERFORMANCE_INFORMATION"},
+	{3, "SYSTEM_TIMEOFDAY_INFORMATION"},
+	{5, "SYSTEM_PROCESS_INFORMATION"},
+	{8, "SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION"},
+	{23, "SYSTEM_INTERRUPT_INFORMATION"},
+	{33, "SYSTEM_EXCEPTION_INFORMATION"},
+	{37, "SYSTEM_REGISTRY_QUOTA_INFORMATION"},
+	{45, "SYSTEM_LOOKASIDE_INFORMATION"},
+};
+
+const std::map<std::string, std::vector<std::string>> tracing_structures_with_args = {
+	{"SYSTEM_BASIC_INFORMATION", {
+		"BYTE Reserved1[24]",
+		"PVOID Reserved2[4]",
+		"CCHAR  NumberOfProcessors",
+	}},
+	{"SYSTEM_PERFORMANCE_INFORMATION", {
+		"BYTE Reserved1[312]",
+	}},
+	{"SYSTEM_TIMEOFDAY_INFORMATION", {
+		"BYTE Reserved1[48]",
+	}},
+	{"SYSTEM_PROCESS_INFORMATION", {
+		"ULONG NextEntryOffset",
+		"ULONG NumberOfThreads",
+		"BYTE Reserved1[48]",
+		"PVOID Reserved2[3]",
+		"HANDLE UniqueProcessId",
+		"PVOID Reserved3",
+		"ULONG HandleCount",
+		"BYTE Reserved4[4]",
+		"PVOID Reserved5[11]",
+		"SIZE_T PeakPagefileUsage",
+		"SIZE_T PrivatePageCount",
+		"LARGE_INTEGER Reserved6[6]"
+	}},
+	{"SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION", {
+		"LARGE_INTEGER IdleTime",
+		"LARGE_INTEGER KernelTime",
+		"LARGE_INTEGER UserTime",
+		"LARGE_INTEGER Reserved1[2]",
+		"ULONG Reserved2",
+	}},
+	{"SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION", {
+		"LARGE_INTEGER IdleTime",
+		"LARGE_INTEGER KernelTime",
+		"LARGE_INTEGER UserTime",
+		"LARGE_INTEGER Reserved1[2]",
+		"ULONG Reserved2",
+	}},
+	{"SYSTEM_INTERRUPT_INFORMATION", {
+		"BYTE Reserved1[24]",
+	}},
+	{"SYSTEM_EXCEPTION_INFORMATION", {
+		"BYTE Reserved1[16]",
+	}},
+	{"SYSTEM_REGISTRY_QUOTA_INFORMATION", {
+		"ULONG RegistryQuotaAllowed",
+		"ULONG RegistryQuotaUsed",
+		"PVOID Reserved1",
+	}},
+	{"SYSTEM_LOOKASIDE_INFORMATION", {
+		"BYTE Reserved1[32]",
+	}},
+};
+
 enum class treat_variant {
-	entity,
 	number,
-	string,
-	wstring,
-	boolean,
 	byte,
-	void_t
+	pvoid_t,
+	pulong_t,
+	system_information,
+	cchar
 };
 
 const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> entities = {
-	{"SYSTEM_INFORMATION_CLASS", {{}, treat_variant::number}},
-	{"PVOID", {{}, treat_variant::void_t}},
+	{"SYSTEM_INFORMATION_CLASS", {{}, treat_variant::system_information}},
+	{"PVOID", {{}, treat_variant::pvoid_t}},
 	{"ULONG", {{}, treat_variant::number}},
+	{"PULONG", {{}, treat_variant::pulong_t}},
+	{"BYTE", {{}, treat_variant::byte}},
+	{"LARGE_INTEGER", {{}, treat_variant::number}},
+	{"CCHAR", {{}, treat_variant::cchar}},
+	{"SIZE_T", {{}, treat_variant::number}},
 };
 
 /*
@@ -154,11 +228,12 @@ private:
 	Dword EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_DEBUG_INFO info);
 
 	void InsertDLL(void* addr, std::wstring name);
+	void ModificateThreadContext(HANDLE& thread, PVOID& exception_address, char saved_byte, CONTEXT& _ctx);
+	void SetNextBreakpoint(PVOID& exception_address, char*& buf, char assembly_buffer[], char hex_buffer[], BreakPoint second);
 	void DeleteDLL(void* addr);
 	void SetBreakpoint(void* addr, BreakPointType type, BreakPoint* prev = nullptr);
 	void SetTracingFunctionsBreakpoints();
 	void PrintRegisterContext(CONTEXT* ctx);
-	void ParseArguments(Dword tid, const std::string& name);
 	void PrintFunctionCall(const std::string& name, std::vector<size_t> arguments, size_t result);
 	void PrintCallInstruction(CONTEXT ctx, void* address, const std::string& inst);
 	void PrintRetInstruction(CONTEXT ctx, void* address, const std::string& inst);
@@ -168,6 +243,7 @@ private:
 	void PrintTopItemStackInfo();
 
 	void ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::string& name);
+	void ParseArguments(const SIZE_T adress, const std::string& name, const std::string& searching_type);
 
 public:
 	Debugger() {

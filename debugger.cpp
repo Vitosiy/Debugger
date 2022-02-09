@@ -77,7 +77,7 @@ void Debugger::Debug() {
 
 		ctx.ContextFlags = CONTEXT_ALL;
 
-		if (!WaitForDebugEvent(&event, INFINITE)) {
+		if (!WaitForDebugEventEx(&event, INFINITE)) {
 			break;
 		}
 
@@ -261,8 +261,8 @@ std::wstring GetFileNameFromHandle(HANDLE hFile) {
 
 void Debugger::EventCreateProcess(const Dword& pid, const Dword& tid, LPCREATE_PROCESS_DEBUG_INFO info) {
 	std::cout << "CreateProcess @ " << info->lpBaseOfImage << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 	if (info->lpImageName) {
 		std::cout << "Name: " << info->lpImageName << std::endl;
 	}
@@ -272,16 +272,16 @@ void Debugger::EventCreateProcess(const Dword& pid, const Dword& tid, LPCREATE_P
 
 void Debugger::EventExitProcess(const Dword& pid, const Dword& tid, LPEXIT_PROCESS_DEBUG_INFO info) {
 	std::cout << "ExitProcess with code " << info->dwExitCode << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 
 	//TODO: стирать процесс?
 }
 
 void Debugger::EventCreateThread(const Dword& pid, const Dword& tid, LPCREATE_THREAD_DEBUG_INFO info) {
 	std::cout << "CreateThread @ " << info->lpStartAddress << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 
 	this->threads.push_back(tid);
 }
@@ -290,8 +290,8 @@ void Debugger::EventExitThread(const Dword& pid, const Dword& tid, LPEXIT_THREAD
 	auto found = std::find(this->threads.begin(), this->threads.end(), tid);
 
 	std::cout << "ExitThread with code " << info->dwExitCode << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 
 	if (found != this->threads.end()) {
 		this->threads.erase(found);
@@ -302,8 +302,8 @@ void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG
 	const std::wstring dll = GetFileNameFromHandle(info->hFile);
 
 	std::cout << "LoadDLL @ " << info->lpBaseOfDll << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 
 	std::wcout << "Name: " << dll << std::endl;
 
@@ -371,8 +371,8 @@ void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG
 
 void Debugger::EventUnloadDll(const Dword& pid, const Dword& tid, LPUNLOAD_DLL_DEBUG_INFO info) {
 	std::cout << "UnloadDLL @ " << info->lpBaseOfDll << "!" << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 
 	if (lib_tracing) {
 		for (const auto bp : lib_breakpoints) {
@@ -392,14 +392,13 @@ void Debugger::EventOutputDebugString(const Dword& pid, const Dword& tid, LPOUTP
 	std::string info_string = std::string(info->nDebugStringLength, 0);
 	ReadProcessMemory(this->debugee_handle, info->lpDebugStringData, &info_string, info->nDebugStringLength, nullptr);
 	std::cout << "Debug string: " << info_string << std::endl;
-	std::cout << "PID: " << pid << std::endl;
-	std::cout << "TID: " << tid << std::endl;
+	std::cout << "PID: " << std::hex << pid << std::endl;
+	std::cout << "TID: " << std::hex << tid << std::endl;
 }
 
 //////////////////////////////////////////////---Обработка исключений---////////////////////////////////////////////////
 
 Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_DEBUG_INFO info) {
-	//TODO: добавить createfilea сюда
 	if (info->ExceptionRecord.ExceptionAddress == (PVOID)0x759B88E0) {
 		std::cout << "123" << std::endl;
 	}
@@ -412,6 +411,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 	char* buf;
 	char assembly_buffer[128] = {0};
 	char hex_buffer[128] = {0};
+	PVOID exception_address = (PVOID)info->ExceptionRecord.ExceptionAddress;
 	std::string assembly_string;
 	switch (info->ExceptionRecord.ExceptionCode) {
 	case (DWORD)EXCEPTION_BREAKPOINT:
@@ -431,12 +431,13 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				}
 
 				std::cout << "DLL's function @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
-				std::cout << "PID: " << pid << std::endl;
-				std::cout << "TID: " << tid << std::endl;
+				std::cout << "PID: " << std::hex << pid << std::endl;
+				std::cout << "TID: " << std::hex << tid << std::endl;
 				std::cout << "Function name: " << lib_breakpoints[info->ExceptionRecord.ExceptionAddress].function_name.c_str() << std::endl;
 				std::cout << "DLL name: " << lib_breakpoints[info->ExceptionRecord.ExceptionAddress].lib_name.c_str() << std::endl;
 
-				CONTEXT ctx = {0};
+				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+				/*CONTEXT ctx = {0};
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
 				ctx.EFlags |= 0x100;
@@ -444,16 +445,72 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 
 				SetThreadContext(thread, &ctx);
 				WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-				FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
-
-				buf = new char[16];
+				FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);*/
+				SetNextBreakpoint(exception_address, buf, assembly_buffer, hex_buffer, found->second);
+				/*buf = new char[16];
 				size_t bytesRead = 0;
 				ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 				bytesRead = DisasInstruction((unsigned char*)buf, 16, (unsigned int)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
 				SetBreakpoint((void*)((size_t)(info->ExceptionRecord.ExceptionAddress) + bytesRead), SAVE_BREAKPOINT, &found->second);
-				delete[] buf;
+				delete[] buf;*/
 			}
 		}
+
+		if (fun_tracing) {
+			if (found != this->breakpoints.end() && found->second.type == TRACING_FUNCTION_BREAKPOINT) {
+				/*for (auto it = this->threads.begin(); it != this->threads.end(); ++it) {
+					if ((*it) == tid) {
+						HANDLE thr = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
+						SuspendThread(thr);
+						CloseHandle(thr);
+					}
+				}*/
+
+				std::cout << "Exception breakpoint @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
+				std::cout << "PID: " << std::hex << pid << std::endl;
+				std::cout << "TID: " << std::hex << tid << std::endl;
+				std::cout << "Function name: " << tracing_functions[info->ExceptionRecord.ExceptionAddress].c_str() << std::endl;
+
+				//Парсим аргументы функции
+				this->ParseArgumentsOfMyTracingFunctions(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
+				//this->ParseArguments(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
+
+				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+				
+				/*CONTEXT ctx = {0};
+				ctx.ContextFlags = CONTEXT_ALL;
+				GetThreadContext(thread, &ctx);
+				ctx.EFlags |= 0x100;
+				ctx.EIP--;
+				SetThreadContext(thread, &ctx);
+				WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
+				FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);*/
+				
+				SetNextBreakpoint(exception_address, buf, assembly_buffer, hex_buffer, found->second);
+				/*buf = new char[16];
+				size_t bytesRead = 0;
+				ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
+				bytesRead = DisasInstruction((unsigned char*)buf, 16, (unsigned int)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
+				SetBreakpoint((void*)((size_t)(info->ExceptionRecord.ExceptionAddress) + bytesRead), SAVE_BREAKPOINT, &found->second);
+				delete[] buf;*/
+			}
+		}
+
+		/*if (found != this->breakpoints.end() && found->second.type == FUNCTION_RETURN_BREAKPOINT) {
+
+			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+
+			CONTEXT ctx = { 0 };
+			ctx.ContextFlags = CONTEXT_ALL;
+			GetThreadContext(thread, &ctx);
+			ctx.EIP--;
+			SetThreadContext(thread, &ctx);
+			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
+			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
+
+			size_t functionResult = ctx.EAX;
+			PrintFunctionCall(this->function_calls[info->ExceptionRecord.ExceptionAddress].name, this->function_calls[info->ExceptionRecord.ExceptionAddress].arguments, functionResult);
+		}*/
 
 		if (!this->debugging) {
 			auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
@@ -461,16 +518,16 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				break;
 			}
 
-			CONTEXT ctx = {0};
-			ctx.ContextFlags = CONTEXT_ALL;
-			GetThreadContext(thread, &ctx);
-			ctx.EFlags |= 0x100; //флаг процессора на трассирование
-			ctx.EIP--;//возвращение на инструкцию назад
-			SetThreadContext(thread, &ctx);
-			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
+			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+			//CONTEXT ctx = {0};
+			//ctx.ContextFlags = CONTEXT_ALL;
+			//GetThreadContext(thread, &ctx);
+			//ctx.EFlags |= 0x100; 
+			//ctx.EIP--;
+			//SetThreadContext(thread, &ctx);
+			//WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
+			//FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
 			this->breakpoints.erase(found);
-
 			if (tracing) {
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -488,53 +545,6 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 #endif
 	{
 		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
-
-		if (found != this->breakpoints.end() && found->second.type == TRACING_FUNCTION_BREAKPOINT) {
-			std::cout << "Exception breakpoint @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
-			std::cout << "PID: " << pid << std::endl;
-			std::cout << "TID: " << tid << std::endl;
-			std::cout << "Function name: " << tracing_functions[info->ExceptionRecord.ExceptionAddress].c_str() << std::endl;
-
-			//Здесь нужно распарсить аргументы
-			this->ParseArgumentsOfMyTracingFunctions(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
-			//this->ParseArguments(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
-
-			for (auto it = this->threads.begin(); it != this->threads.end(); ++it) {
-				if ((*it) == tid) {
-					HANDLE thr = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
-					SuspendThread(thr);
-					CloseHandle(thr);
-				}
-			}
-
-			CONTEXT ctx = {0};
-			ctx.ContextFlags = CONTEXT_ALL;
-			GetThreadContext(thread, &ctx);
-			ctx.EFlags |= 0x100;
-			ctx.EIP--;
-			SetThreadContext(thread, &ctx);
-			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
-
-			buf = new char[16];
-			size_t bytesRead = 0;
-			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
-			bytesRead = DisasInstruction((unsigned char*)buf, 16, (unsigned int)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
-			SetBreakpoint((void*)((size_t)(info->ExceptionRecord.ExceptionAddress) + bytesRead), SAVE_BREAKPOINT, &found->second);
-			delete[] buf;
-		}
-		else if (found != this->breakpoints.end() && found->second.type == FUNCTION_RETURN_BREAKPOINT) {
-			CONTEXT ctx = {0};
-			ctx.ContextFlags = CONTEXT_ALL;
-			GetThreadContext(thread, &ctx);
-			ctx.EIP--;
-			SetThreadContext(thread, &ctx);
-			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
-
-			size_t functionResult = ctx.EAX;
-			PrintFunctionCall(this->function_calls[info->ExceptionRecord.ExceptionAddress].name, this->function_calls[info->ExceptionRecord.ExceptionAddress].arguments, functionResult);
-		}
 
 		if (tracing) {
 			ctx.ContextFlags = CONTEXT_ALL;
@@ -631,7 +641,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				GetThreadContext(thread, &ctx);
 
 				std::cout << "<RET> value: " << ctx.EAX << std::endl;
-				std::cout << "PID: " << pid << " TID: " << tid << std::endl;
+				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				if (this->call_stack.empty()) {
 					std::cout << "Tried to pop empty stack!" << std::endl;
 				}
@@ -649,7 +659,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			}
 
 			if (assembly_string.rfind("CALL", 0) == 0) {
-				std::cout << "PID: " << pid << " TID: " << tid << std::endl;
+				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
 				this->AddCallingStackItem(assembly_string, (Dword)info->ExceptionRecord.ExceptionAddress);
@@ -657,7 +667,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			}
 
 			if (assembly_string.rfind("RET", 0) == 0) {
-				std::cout << "PID: " << pid << " TID: " << tid << std::endl;
+				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
 				this->passed_return = true;
@@ -665,7 +675,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			}
 
 			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
-				std::cout << "PID: " << pid << " TID: " << tid << std::endl;
+				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
 				PrintRor(assembly_string, &ctx);
@@ -705,6 +715,28 @@ void Debugger::DeleteDLL(void* addr) {
 	this->dll.erase(addr);
 }
 
+void Debugger::ModificateThreadContext(HANDLE& thread, PVOID& exception_address, char saved_byte, CONTEXT& _ctx) {
+	CONTEXT ctx = { 0 };
+	ctx.ContextFlags = CONTEXT_ALL;
+	//_ctx = ctx;
+	GetThreadContext(thread, &ctx);
+	ctx.EFlags |= 0x100;	//ставим флаг процессора на трассирование
+	ctx.EIP--;				//возвращаемся на инструкцию назад, т.е. в EIP будет адрес текущей инструкции
+
+	SetThreadContext(thread, &ctx);
+	WriteProcessMemory(this->debugee_handle, exception_address, &saved_byte, 1, nullptr);
+	FlushInstructionCache(this->debugee_handle, exception_address, 1);
+}
+
+void Debugger::SetNextBreakpoint(PVOID& exception_address, char* &buf, char* assembly_buffer, char* hex_buffer, BreakPoint second) {
+	buf = new char[16];
+	size_t bytesRead = 0;
+	ReadProcessMemory(this->debugee_handle, exception_address, buf, 16, nullptr);
+	bytesRead = DisasInstruction((unsigned char*)buf, 16, (unsigned int)exception_address, assembly_buffer, hex_buffer);
+	SetBreakpoint((void*)((size_t)(exception_address) + bytesRead), SAVE_BREAKPOINT, &second);
+	delete[] buf;
+}
+
 void Debugger::SetBreakpoint(void* addr, BreakPointType type, BreakPoint* prev) {
 	if (this->breakpoints.find(addr) != this->breakpoints.end()) {
 		return;
@@ -724,13 +756,13 @@ void Debugger::SetTracingFunctionsBreakpoints() {
 		if (kernel_address) {
 			SetBreakpoint((void*)kernel_address, TRACING_FUNCTION_BREAKPOINT, nullptr);
 			tracing_functions[kernel_address] = name;
-			std::cout << "Found function " << name << " @ " << kernel_address << std::endl;
+			std::cout << "Found function " << name << " @ " << std::hex << kernel_address << std::endl;
 			std::cout << "Breakpoint set!" << std::endl;
 		}
 		if (nt_address) {
 			SetBreakpoint((void*)nt_address, TRACING_FUNCTION_BREAKPOINT, nullptr);
 			tracing_functions[nt_address] = name;
-			std::cout << "Found function " << name << " @ " << nt_address << std::endl;
+			std::cout << "Found function " << name << " @ " << std::hex << nt_address << std::endl;
 			std::cout << "Breakpoint set!" << std::endl;
 		}
 	}
@@ -740,7 +772,6 @@ void Debugger::SetTracingFunctionsBreakpoints() {
 
 
 ////////////////////////////////////////////////---Выводы в консоль---///////////////////////////////////////////////////
-
 void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 #ifdef _WIN64
 	std::cout << "RAX: " << ctx->Rax << std::endl;
@@ -943,14 +974,12 @@ void Debugger::AddCallingStackItem(const std::string call_instrtuction, const Dw
 	this->call_stack.push(ci);
 }
 
-void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::string& name) {
-	CONTEXT ctx = {0};
-	HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, tid);
-	ctx.ContextFlags = CONTEXT_ALL;
-	GetThreadContext(thread, &ctx);
+void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, const std::string& searching_type = "structure") {
 
+	DWORD info_class = 0xffffffff;
 	unsigned int current_argument_number = 0;
-	const auto& [function_name, arguments] = *tracing_functions_with_args.find(name);
+
+	const auto& [function_name, arguments] = searching_type == "function" ? *tracing_functions_with_args.find(name) : *tracing_structures_with_args.find(name);
 
 	for (const auto& argument : arguments) {
 		auto type_with_name = split(argument, " ");
@@ -962,17 +991,21 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 		);
 		std::string type = type_with_name[0];
 		const std::string argument_name = type_with_name[1];
-		bool is_lpointer = type.rfind("LP", 0) == 0;
+		int massive_lengh = 1;
+		if (type_with_name[1].find("[") != -1) {
+			auto tmp_massive_lengh = split(type_with_name[1], "[")[1];
+			tmp_massive_lengh.pop_back();
+			massive_lengh = std::stoi(tmp_massive_lengh);
+		}
+		/*bool is_lpointer = type.rfind("LP", 0) == 0;
 		bool is_pointer = type.rfind("P", 0) == 0;
 		if (is_lpointer) {
 			type = type.substr(2, type.length());
 		}
 		if (is_pointer) {
-			if (strcmp(type.c_str(), "PVOID"))
-				continue;
-			else 
+			if (strcmp(type.c_str(), "PVOID") != 0)
 				type = type.substr(1, type.length());
-		}
+		}*/
 		const auto& [_, members_and_treating] = *entities.find(type);
 		const auto& members = members_and_treating.first;
 		const auto treating = members_and_treating.second;
@@ -980,7 +1013,57 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 		switch (treating) {
 		case treat_variant::number:
 		{
-			Dword number;
+			std::cout << type << " " << argument_name << " = ";
+			DWORD number;
+#ifdef _WIN64
+			switch (current_argument_number) {
+			case 0:
+			{
+				std::cout << ctx.Rcx << std::endl;
+				break;
+			}
+			case 1:
+			{
+				std::cout << ctx.Rdx << std::endl;
+				break;
+			}
+			case 2:
+			{
+				std::cout << ctx.R8 << std::endl;
+				break;
+			}
+			case 3:
+			{
+				std::cout << ctx.R9 << std::endl;
+				break;
+			}
+			default:
+			{
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+					&number,
+					sizeof(size_t) * massive_lengh,
+					nullptr
+				);
+				std::cout << std::hex << number << std::endl;
+				break;
+			}
+			}
+#else
+			ReadProcessMemory(
+				this->debugee_handle,
+				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				&number,
+				sizeof(size_t) * massive_lengh,
+				nullptr
+			);
+			std::cout << std::hex << number << std::endl;
+#endif // _WIN64
+			break;
+		}
+		case treat_variant::system_information:
+		{
 			std::cout << type << " " << argument_name << " = ";
 #ifdef _WIN64
 			switch (current_argument_number) {
@@ -1009,39 +1092,101 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 				size_t value;
 				ReadProcessMemory(
 					this->debugee_handle,
-					(LPCVOID)(ctx.ESP + (current_argument_number) * sizeof(size_t)),
-					&value,
+					(LPCVOID)((ctx.ESP + sizeof(size_t)) + (current_argument_number) * sizeof(size_t)),
+					&info_class,
 					sizeof(size_t),
 					nullptr
 				);
-				std::cout << value << std::endl;
+				std::cout << std::hex << info_class << std::endl;
 				break;
 			}
 			}
 #else
 			ReadProcessMemory(
 				this->debugee_handle,
-				(LPCVOID)(ctx.ESP + (current_argument_number) * sizeof(size_t)),
-				&number,
+				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				&info_class,
 				sizeof(size_t),
 				nullptr
 			);
-			std::cout << number << std::endl;
+			std::cout << std::hex << info_class << std::endl;
 #endif // _WIN64
 			break;
 		}
-		case treat_variant::void_t:
+		case treat_variant::pvoid_t:
 		{
 			std::cout << type << " " << argument_name << " = ";
-			PVOID value;
+
+			SIZE_T* info_ptr;
+			if (massive_lengh > 1) {
+				info_ptr = new SIZE_T[massive_lengh];
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+					info_ptr,
+					sizeof(PVOID) * massive_lengh,
+					nullptr
+				);
+			}
+			else
+			{
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+					&info_ptr,
+					sizeof(PVOID)* massive_lengh,
+					nullptr
+				);
+			}
+			if (info_class != 0xffffffff) {
+				const auto& findres = id_system_information_class.find(info_class);
+				if (findres == std::end(id_system_information_class))
+					throw new std::exception();
+				auto [struct_id, struct_name] = *id_system_information_class.find(info_class);
+				std::cout << struct_name << std::endl;
+				info_class = 0xffffffff;
+				this->ParseArguments((SIZE_T)info_ptr, struct_name);
+			}
+			else {
+				for (int i = 0; i < massive_lengh; i++)
+					std::cout << "0x" << *(info_ptr + i) << " ";
+				std::cout << std::endl;
+			}
+
+			if (massive_lengh > 1)
+				delete[] info_ptr;
+
+			break;
+		}
+		case treat_variant::pulong_t:
+		{
+			std::cout << type << " " << argument_name << " = ";
+			PULONG info_ret_size;
 			ReadProcessMemory(
 				this->debugee_handle,
-				(LPCVOID)(ctx.ESP + (current_argument_number) * sizeof(PVOID)),
-				&value,
-				sizeof(PVOID),
+				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				&info_ret_size,
+				sizeof(PULONG) * massive_lengh,
 				nullptr
 			);
-			std::cout << value << std::endl;
+			std::cout << std::hex << info_ret_size << std::endl;
+			break;
+		}
+		case treat_variant::byte:
+		{
+			BYTE* byte_array = new BYTE[massive_lengh];
+			std::cout << type << " " << argument_name << " = ";
+			ReadProcessMemory(
+				this->debugee_handle,
+				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				byte_array,
+				sizeof(BYTE) * massive_lengh,
+				nullptr
+			);
+			for (int i = 0; i < massive_lengh; i++)
+				printf("%02x ", *(byte_array + i));
+			std::cout << std::endl;
+			delete[] byte_array;
 			break;
 		}
 		default:
@@ -1050,62 +1195,74 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 
 		current_argument_number++;
 	}
-}
+};
 
-void Debugger::ParseArguments(Dword tid, const std::string& name) {
-	CONTEXT ctx = { 0 };
+void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::string& name) {
+	CONTEXT ctx = {0};
 	HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, tid);
 	ctx.ContextFlags = CONTEXT_ALL;
 	GetThreadContext(thread, &ctx);
 
-	size_t ret_addr = { 0 };
-	std::vector<size_t> args;
-	ReadProcessMemory(this->debugee_handle, (LPCVOID)ctx.ESP, &ret_addr, sizeof(size_t), nullptr);
+	SIZE_T adress = ctx.ESP + sizeof(size_t);
 
-#ifdef _WIN64
-	//https://docs.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-160
-	for (size_t i = 0; i < tracing_functions_with_args.at(name).size(); ++i) {
-		switch (i) {
-		case 0:
-		{
-			args.push_back(ctx.Rcx);
-			break;
-		}
-		case 1:
-		{
-			args.push_back(ctx.Rdx);
-			break;
-		}
-		case 2:
-		{
-			args.push_back(ctx.R8);
-			break;
-		}
-		case 3:
-		{
-			args.push_back(ctx.R9);
-			break;
-		}
-		default:
-		{
-			size_t value;
-			ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.ESP + (i + 1) * sizeof(size_t)), &value, sizeof(size_t), nullptr);
-			args.push_back(value);
-		}
-		}
-	}
-#else
-	size_t value;
-	for (size_t i = 0; i < tracing_functions_with_args.at(name).size(); ++i) {
-		value = 0;
-		ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.ESP + (i + 1) * sizeof(size_t)), &value, sizeof(size_t), nullptr);
-		args.push_back(value);
-	}
-#endif
-	this->function_calls[(void*)ret_addr] = FunctionCall{ name, args };
-	SetBreakpoint((void*)ret_addr, FUNCTION_RETURN_BREAKPOINT, nullptr);
-
-	CloseHandle(thread);
+	this->ParseArguments(adress, name, "function");
 }
+
+
+//void Debugger::ParseArguments(Dword tid, const std::string& name) {
+//	CONTEXT ctx = { 0 };
+//	HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, tid);
+//	ctx.ContextFlags = CONTEXT_ALL;
+//	GetThreadContext(thread, &ctx);
+//
+//	size_t ret_addr = { 0 };
+//	std::vector<size_t> args;
+//	ReadProcessMemory(this->debugee_handle, (LPCVOID)ctx.ESP, &ret_addr, sizeof(size_t), nullptr);
+//
+//#ifdef _WIN64
+//	//https://docs.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-160
+//	for (size_t i = 0; i < tracing_functions_with_args.at(name).size(); ++i) {
+//		switch (i) {
+//		case 0:
+//		{
+//			args.push_back(ctx.Rcx);
+//			break;
+//		}
+//		case 1:
+//		{
+//			args.push_back(ctx.Rdx);
+//			break;
+//		}
+//		case 2:
+//		{
+//			args.push_back(ctx.R8);
+//			break;
+//		}
+//		case 3:
+//		{
+//			args.push_back(ctx.R9);
+//			break;
+//		}
+//		default:
+//		{
+//			size_t value;
+//			ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.ESP + (i + 1) * sizeof(size_t)), &value, sizeof(size_t), nullptr);
+//			args.push_back(value);
+//		}
+//		}
+//	}
+//#else
+//	size_t value;
+//	for (size_t i = 0; i < tracing_functions_with_args.at(name).size(); ++i) {
+//		value = 0;
+//		ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.ESP + (i + 1) * sizeof(size_t)), &value, sizeof(size_t), nullptr);
+//		args.push_back(value);
+//	}
+//#endif
+//	this->function_calls[(void*)ret_addr] = FunctionCall{ name, args };
+//	SetBreakpoint((void*)ret_addr, FUNCTION_RETURN_BREAKPOINT, nullptr);
+//
+//	CloseHandle(thread);
+//}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
