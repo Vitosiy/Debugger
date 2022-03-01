@@ -95,7 +95,7 @@ void Debugger::Debug() {
 #if _WIN64
 			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
 #else
-			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress - 0x29e, INITIAL_BREAKPOINT, nullptr);
+			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress , INITIAL_BREAKPOINT, nullptr);
 #endif // _WIN64
 
 			break;
@@ -157,6 +157,10 @@ void Debugger::Debug() {
 
 void Debugger::Tracing(const bool tracing) {
 	this->tracing = tracing;
+}
+
+void Debugger::BaseTracing(const bool tracing) {
+	this->base_tracing = tracing;
 }
 
 void Debugger::Libs(const bool tracing) {
@@ -357,7 +361,7 @@ void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG
 
 			ReadProcessMemory(this->debugee_handle, (LPCVOID)((size_t)base + name_buffer[i]), s, 128, nullptr);
 			auto function_address = (void*)((size_t)base + func_buffer[ord_buffer[i]]);
-			std::cout << s << " -> " << function_address << std::endl;
+			std::cout << s << " -> " << std::hex << function_address << std::endl;
 
 			SetBreakpoint(function_address, LIB_FUNCTION_BREAKPOINT, nullptr);
 			this->lib_breakpoints[function_address] = LibFunctionBreakpoint{dll, s, function_address};
@@ -399,12 +403,6 @@ void Debugger::EventOutputDebugString(const Dword& pid, const Dword& tid, LPOUTP
 //////////////////////////////////////////////---Обработка исключений---////////////////////////////////////////////////
 
 Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_DEBUG_INFO info) {
-	if (info->ExceptionRecord.ExceptionAddress == (PVOID)0x759B88E0) {
-		std::cout << "123" << std::endl;
-	}
-	if (info->ExceptionRecord.ExceptionAddress == (PVOID)0x759D2D90) {
-		std::cout << "123" << std::endl;
-	}
 
 	HANDLE thread = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, tid);
 	CONTEXT ctx = {0};
@@ -446,6 +444,8 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				SetThreadContext(thread, &ctx);
 				WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
 				FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);*/
+				/*if (info->ExceptionRecord.ExceptionAddress == (PVOID)0x772E0680)
+					break;*/
 				SetNextBreakpoint(exception_address, buf, assembly_buffer, hex_buffer, found->second);
 				/*buf = new char[16];
 				size_t bytesRead = 0;
@@ -476,7 +476,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				//this->ParseArguments(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
 
 				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
-				
+
 				/*CONTEXT ctx = {0};
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -485,7 +485,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				SetThreadContext(thread, &ctx);
 				WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
 				FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);*/
-				
+
 				SetNextBreakpoint(exception_address, buf, assembly_buffer, hex_buffer, found->second);
 				/*buf = new char[16];
 				size_t bytesRead = 0;
@@ -528,12 +528,14 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			//WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
 			//FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
 			this->breakpoints.erase(found);
-			if (tracing) {
+
+			if (base_tracing) {
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
 				ctx.EFlags |= 0x100;
 				SetThreadContext(thread, &ctx);
 			}
+
 			this->debugging = true;
 		}
 		break;
@@ -546,14 +548,19 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 	{
 		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
 
-		if (tracing) {
+		if (base_tracing) {
 			ctx.ContextFlags = CONTEXT_ALL;
 			GetThreadContext(thread, &ctx);
 			ctx.EFlags |= 0x100;
 			SetThreadContext(thread, &ctx);
 		}
 
+		if (found != this->breakpoints.end() && found->second.type == LIB_FUNCTION_BREAKPOINT) {
+			std::cout << "Ahtung!" << std::endl;
+		}
+
 		if (found != this->breakpoints.end() && found->second.type == SAVE_BREAKPOINT) {
+
 			// Возвращаем 0xCC
 			WriteProcessMemory(this->debugee_handle, found->second.prev->addr, "\xCC", 1, nullptr);
 			FlushInstructionCache(this->debugee_handle, found->second.prev->addr, 1);
@@ -571,7 +578,8 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			}
 		}
 
-		if (tracing) {
+		if (base_tracing) {
+
 			buf = new char[16];
 			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 			DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
@@ -579,111 +587,116 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			assembly_string = assembly_buffer;
 			std::transform(assembly_string.begin(), assembly_string.end(), assembly_string.begin(), ::toupper);
 
-			_debug_stream << assembly_buffer << ":" << std::hex << info->ExceptionRecord.ExceptionAddress << ":" << tid << std::endl;
-
-			if (!this->call_stack.empty()) {
-				Command cmd(assembly_string);
-				auto& current_call_from_stack = this->call_stack.top();
-				const auto offset = cmd.get_ebp_offset();
-				if (offset) {
-					if (offset.value() > current_call_from_stack.current_max_ebp_offset) {
-						current_call_from_stack.current_max_ebp_offset = offset.value();
-					}
-					if (offset < 8 && !current_call_from_stack.current_call_accessed_less_than_8_bytes_ebp) {
-						current_call_from_stack.current_call_accessed_less_than_8_bytes_ebp = true;
-					}
-
-					if (offset > 0) {
-#ifdef _WIN64
-						ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.Rbp + offset.value()), buf, 16, nullptr);
-#else
-						ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.Ebp + offset.value()), buf, 16, nullptr);
-#endif
-						current_call_from_stack.values_on_ebp_offsets[offset.value()] = (Dword)buf;
-					}
-				}
-
-				const auto dst_used_registers = cmd.dst_used_registers();
-				const auto src_used_registers = cmd.src_used_registers();
-
-				//Смотрим, из каких регистров берут данные
-				//Если из какого-то регистра берут данные, и он не был проинициализирован до, то значит там аргумент
-				//Проинициализированный регистр - регистр, который фигурировал в dst
-
-				for (const auto& src_used_register : src_used_registers) {
-					if (current_call_from_stack.initialized_registers.find(src_used_register) == current_call_from_stack.initialized_registers.end()) {
-						std::optional<double> value;
-						try {
-							value = get_variable_from_string(src_used_register, &ctx);
-							if (value) {
-								current_call_from_stack.used_registers_before_initialization[src_used_register] = std::to_string((int)value.value());
-							}
-							else {
-								current_call_from_stack.used_registers_before_initialization[src_used_register] = "could not get value";
-							}
-						}
-						catch (const std::exception&) {
-							current_call_from_stack.used_registers_before_initialization[src_used_register] = "could not get value";
-						}
-
-					}
-				}
-
-				for (const auto& dst_used_register : dst_used_registers) {
-					current_call_from_stack.initialized_registers.insert(dst_used_register);
-				}
-			}
-
-			//связывать call с наивным методом и без него
-			//по адресу
-			if (this->passed_return) {
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-
-				std::cout << "<RET> value: " << ctx.EAX << std::endl;
-				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
-				if (this->call_stack.empty()) {
-					std::cout << "Tried to pop empty stack!" << std::endl;
-				}
-				else {
-					auto& current_call_from_stack = this->call_stack.top();
-#ifdef _WIN64
-					current_call_from_stack.returned_value = std::to_string(ctx.Rax);
-#else
-					current_call_from_stack.returned_value = std::to_string(ctx.Eax);
-#endif
-					this->PrintTopItemStackInfo();
-					this->call_stack.pop();
-				}
-				this->passed_return = false;
-			}
-
-			if (assembly_string.rfind("CALL", 0) == 0) {
-				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-				this->AddCallingStackItem(assembly_string, (Dword)info->ExceptionRecord.ExceptionAddress);
-				PrintCallInstruction(ctx, (void*)info->ExceptionRecord.ExceptionAddress, assembly_string);
-			}
-
-			if (assembly_string.rfind("RET", 0) == 0) {
-				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-				this->passed_return = true;
-				PrintRetInstruction(ctx, (void*)info->ExceptionRecord.ExceptionAddress, assembly_string);
-			}
 
 			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
 				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
+				_debug_stream << assembly_buffer << " :" << std::hex << info->ExceptionRecord.ExceptionAddress << ":" << tid << std::endl;
 				PrintRor(assembly_string, &ctx);
 				PrintRegisterContext(&ctx);
 			}
+			if (tracing) {
+
+				_debug_stream << assembly_buffer << " :" << std::hex << info->ExceptionRecord.ExceptionAddress << ":" << tid << std::endl;
+
+				if (!this->call_stack.empty()) {
+					Command cmd(assembly_string);
+					auto& current_call_from_stack = this->call_stack.top();
+					const auto offset = cmd.get_ebp_offset();
+					if (offset) {
+						if (offset.value() > current_call_from_stack.current_max_ebp_offset) {
+							current_call_from_stack.current_max_ebp_offset = offset.value();
+						}
+						/*if (offset < 8 && !current_call_from_stack.current_call_accessed_less_than_8_bytes_ebp) {
+							current_call_from_stack.current_call_accessed_less_than_8_bytes_ebp = true;
+						}*/
+
+						if (offset > 0) {
+#ifdef _WIN64
+							ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.Rbp + offset.value()), buf, 16, nullptr);
+#else
+							ReadProcessMemory(this->debugee_handle, (LPCVOID)(ctx.Ebp + offset.value()), buf, 16, nullptr);
+#endif
+							current_call_from_stack.values_on_ebp_offsets[offset.value()] = (Dword)buf;
+						}
+					}
+
+					const auto dst_used_registers = cmd.dst_used_registers();
+					const auto src_used_registers = cmd.src_used_registers();
+
+					//Смотрим, из каких регистров берут данные
+					//Если из какого-то регистра берут данные, и он не был проинициализирован до, то значит там аргумент
+					//Проинициализированный регистр - регистр, который фигурировал в dst
+
+					for (const auto& src_used_register : src_used_registers) {
+						if (current_call_from_stack.initialized_registers.find(src_used_register) == current_call_from_stack.initialized_registers.end()) {
+							std::optional<double> value;
+							try {
+								value = get_variable_from_string(src_used_register, &ctx);
+								if (value) {
+									current_call_from_stack.used_registers_before_initialization[src_used_register] = std::to_string((int)value.value());
+								}
+								else {
+									current_call_from_stack.used_registers_before_initialization[src_used_register] = "could not get value";
+								}
+							}
+							catch (const std::exception&) {
+								current_call_from_stack.used_registers_before_initialization[src_used_register] = "could not get value";
+							}
+
+						}
+					}
+
+					for (const auto& dst_used_register : dst_used_registers) {
+						current_call_from_stack.initialized_registers.insert(dst_used_register);
+					}
+				}
+
+				//связывать call с наивным методом и без него
+				//по адресу
+				if (this->passed_return) {
+					ctx.ContextFlags = CONTEXT_ALL;
+					GetThreadContext(thread, &ctx);
+
+					std::cout << "<RET> value: " << ctx.EAX << std::endl;
+					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
+					if (this->call_stack.empty()) {
+						std::cout << "Tried to pop empty stack!" << std::endl;
+					}
+					else {
+						auto& current_call_from_stack = this->call_stack.top();
+#ifdef _WIN64
+						current_call_from_stack.returned_value = std::to_string(ctx.Rax);
+#else
+						current_call_from_stack.returned_value = std::to_string(ctx.Eax);
+#endif
+						this->PrintTopItemStackInfo();
+						this->call_stack.pop();
+					}
+					this->passed_return = false;
+				}
+
+
+				if (assembly_string.rfind("CALL", 0) == 0) {
+					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
+					ctx.ContextFlags = CONTEXT_ALL;
+					GetThreadContext(thread, &ctx);
+					this->AddCallingStackItem(assembly_string, (Dword)info->ExceptionRecord.ExceptionAddress);
+					PrintCallInstruction(ctx, (void*)info->ExceptionRecord.ExceptionAddress, assembly_string);
+				}
+
+				if (assembly_string.rfind("RET", 0) == 0) {
+					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
+					ctx.ContextFlags = CONTEXT_ALL;
+					GetThreadContext(thread, &ctx);
+					this->passed_return = true;
+					PrintRetInstruction(ctx, (void*)info->ExceptionRecord.ExceptionAddress, assembly_string);
+				}
+
+			}
 			delete[] buf;
 		}
-
 		break;
 	}
 
@@ -695,6 +708,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 		ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 		DisasInstruction((unsigned char*)buf, 16, (unsigned int)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
 		std::cout << "Instruction: " << assembly_buffer << std::endl;
+		std::cout << "Exception Code: " << std::hex << info->ExceptionRecord.ExceptionCode << std::endl;
 
 		delete[] buf;
 		CloseHandle(thread);
@@ -774,6 +788,24 @@ void Debugger::SetTracingFunctionsBreakpoints() {
 ////////////////////////////////////////////////---Выводы в консоль---///////////////////////////////////////////////////
 void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 #ifdef _WIN64
+	_debug_stream << "RAX: " << std::hex << ctx->Rax << std::endl;
+	_debug_stream << "RBX: " << std::hex << ctx->Rbx << std::endl;
+	_debug_stream << "RCX: " << std::hex << ctx->Rcx << std::endl;
+	_debug_stream << "RDX: " << std::hex << ctx->Rdx << std::endl;
+	_debug_stream << "RSI: " << std::hex << ctx->Rsi << std::endl;
+	_debug_stream << "RDI: " << std::hex << ctx->Rdi << std::endl;
+	_debug_stream << "RSP: " << std::hex << ctx->Rsp << std::endl;
+	_debug_stream << "RBP: " << std::hex << ctx->Rbp << std::endl;
+	_debug_stream << "RIP: " << std::hex << ctx->Rip << std::endl;
+	_debug_stream << "R8: " << std::hex << ctx->R9 << std::endl;
+	_debug_stream << "R9: " << std::hex << ctx->R8 << std::endl;
+	_debug_stream << "R10: " << std::hex << ctx->R10 << std::endl;
+	_debug_stream << "R11: " << std::hex << ctx->R11 << std::endl;
+	_debug_stream << "R12: " << std::hex << ctx->R12 << std::endl;
+	_debug_stream << "R13: " << std::hex << ctx->R13 << std::endl;
+	_debug_stream << "R14: " << std::hex << ctx->R14 << std::endl;
+	_debug_stream << "R15: " << std::hex << ctx->R15 << std::endl;
+
 	std::cout << "RAX: " << ctx->Rax << std::endl;
 	std::cout << "RBX: " << ctx->Rbx << std::endl;
 	std::cout << "RCX: " << ctx->Rcx << std::endl;
@@ -792,6 +824,16 @@ void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 	std::cout << "R14: " << ctx->R14 << std::endl;
 	std::cout << "R15: " << ctx->R15 << std::endl;
 #else
+	_debug_stream << "EAX: " << std::hex << ctx->Eax << std::endl;
+	_debug_stream << "EBX: " << std::hex << ctx->Ebx << std::endl;
+	_debug_stream << "ECX: " << std::hex << ctx->Ecx << std::endl;
+	_debug_stream << "EDX: " << std::hex << ctx->Edx << std::endl;
+	_debug_stream << "ESI: " << std::hex << ctx->Esi << std::endl;
+	_debug_stream << "EDI: " << std::hex << ctx->Edi << std::endl;
+	_debug_stream << "ESP: " << std::hex << ctx->Esp << std::endl;
+	_debug_stream << "EBP: " << std::hex << ctx->Ebp << std::endl;
+	_debug_stream << "EIP: " << std::hex << ctx->Eip << std::endl;
+
 	std::cout << "EAX: " << ctx->Eax << std::endl;
 	std::cout << "EBX: " << ctx->Ebx << std::endl;
 	std::cout << "ECX: " << ctx->Ecx << std::endl;
@@ -997,15 +1039,7 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			tmp_massive_lengh.pop_back();
 			massive_lengh = std::stoi(tmp_massive_lengh);
 		}
-		/*bool is_lpointer = type.rfind("LP", 0) == 0;
-		bool is_pointer = type.rfind("P", 0) == 0;
-		if (is_lpointer) {
-			type = type.substr(2, type.length());
-		}
-		if (is_pointer) {
-			if (strcmp(type.c_str(), "PVOID") != 0)
-				type = type.substr(1, type.length());
-		}*/
+
 		const auto& [_, members_and_treating] = *entities.find(type);
 		const auto& members = members_and_treating.first;
 		const auto treating = members_and_treating.second;
@@ -1014,43 +1048,8 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 		case treat_variant::number:
 		{
 			std::cout << type << " " << argument_name << " = ";
-			DWORD number;
-#ifdef _WIN64
-			switch (current_argument_number) {
-			case 0:
-			{
-				std::cout << ctx.Rcx << std::endl;
-				break;
-			}
-			case 1:
-			{
-				std::cout << ctx.Rdx << std::endl;
-				break;
-			}
-			case 2:
-			{
-				std::cout << ctx.R8 << std::endl;
-				break;
-			}
-			case 3:
-			{
-				std::cout << ctx.R9 << std::endl;
-				break;
-			}
-			default:
-			{
-				ReadProcessMemory(
-					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
-					&number,
-					sizeof(size_t) * massive_lengh,
-					nullptr
-				);
-				std::cout << std::hex << number << std::endl;
-				break;
-			}
-			}
-#else
+			size_t number;
+
 			ReadProcessMemory(
 				this->debugee_handle,
 				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
@@ -1058,73 +1057,54 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 				sizeof(size_t) * massive_lengh,
 				nullptr
 			);
+			for (int i = 0; i < massive_lengh; i++)
+				std::cout << "0x" << number + i << " ";
+			std::cout << std::endl;
+
+			break;
+		}
+		case treat_variant::lnumber:
+		{
+			std::cout << type << " " << argument_name << " = ";
+			uint64_t number;
+
+			ReadProcessMemory(
+				this->debugee_handle,
+				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
+				&number,
+				sizeof(uint64_t) * massive_lengh,
+				nullptr
+			);
 			std::cout << std::hex << number << std::endl;
-#endif // _WIN64
 			break;
 		}
 		case treat_variant::system_information:
 		{
 			std::cout << type << " " << argument_name << " = ";
-#ifdef _WIN64
-			switch (current_argument_number) {
-			case 0:
-			{
-				std::cout << ctx.Rcx << std::endl;
-				break;
-			}
-			case 1:
-			{
-				std::cout << ctx.Rdx << std::endl;
-				break;
-			}
-			case 2:
-			{
-				std::cout << ctx.R8 << std::endl;
-				break;
-			}
-			case 3:
-			{
-				std::cout << ctx.R9 << std::endl;
-				break;
-			}
-			default:
-			{
-				size_t value;
-				ReadProcessMemory(
-					this->debugee_handle,
-					(LPCVOID)((ctx.ESP + sizeof(size_t)) + (current_argument_number) * sizeof(size_t)),
-					&info_class,
-					sizeof(size_t),
-					nullptr
-				);
-				std::cout << std::hex << info_class << std::endl;
-				break;
-			}
-			}
-#else
+
 			ReadProcessMemory(
 				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
 				&info_class,
-				sizeof(size_t),
+				sizeof(DWORD_PTR),
 				nullptr
 			);
 			std::cout << std::hex << info_class << std::endl;
-#endif // _WIN64
+
 			break;
 		}
-		case treat_variant::pvoid_t:
+		case treat_variant::pointer:
 		{
 			std::cout << type << " " << argument_name << " = ";
 
-			SIZE_T* info_ptr;
+			DWORD_PTR* info_ptr;
 			if (massive_lengh > 1) {
-				info_ptr = new SIZE_T[massive_lengh];
+				info_ptr = new DWORD_PTR[massive_lengh];
 				ReadProcessMemory(
 					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
 					info_ptr,
-					sizeof(PVOID) * massive_lengh,
+					sizeof(DWORD_PTR) * massive_lengh,
 					nullptr
 				);
 			}
@@ -1132,9 +1112,9 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			{
 				ReadProcessMemory(
 					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
 					&info_ptr,
-					sizeof(PVOID)* massive_lengh,
+					sizeof(DWORD_PTR)* massive_lengh,
 					nullptr
 				);
 			}
@@ -1145,7 +1125,7 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 				auto [struct_id, struct_name] = *id_system_information_class.find(info_class);
 				std::cout << struct_name << std::endl;
 				info_class = 0xffffffff;
-				this->ParseArguments((SIZE_T)info_ptr, struct_name);
+				this->ParseArguments((DWORD_PTR)info_ptr, struct_name);
 			}
 			else {
 				for (int i = 0; i < massive_lengh; i++)
@@ -1158,18 +1138,42 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 
 			break;
 		}
-		case treat_variant::pulong_t:
+		case treat_variant::lpointer:
 		{
 			std::cout << type << " " << argument_name << " = ";
-			PULONG info_ret_size;
-			ReadProcessMemory(
-				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
-				&info_ret_size,
-				sizeof(PULONG) * massive_lengh,
-				nullptr
-			);
-			std::cout << std::hex << info_ret_size << std::endl;
+
+			if (massive_lengh > 1) {
+				uint64_t* long_pointer = new uint64_t[massive_lengh];
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
+					long_pointer,
+					2 * sizeof(uint64_t) * massive_lengh,
+					nullptr
+				);
+
+				for (int i = 0; i < massive_lengh; i++)
+					std::cout << "0x" << *(long_pointer + i) << " ";
+				std::cout << std::endl;
+
+				delete[] long_pointer;
+			}
+			else
+			{
+				uint64_t long_pointer;
+
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
+					&long_pointer,
+					sizeof(uint64_t),
+					nullptr
+				);
+
+				std::cout << "0x" << long_pointer << std::endl;
+
+			}
+
 			break;
 		}
 		case treat_variant::byte:
@@ -1178,7 +1182,7 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			std::cout << type << " " << argument_name << " = ";
 			ReadProcessMemory(
 				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
+				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
 				byte_array,
 				sizeof(BYTE) * massive_lengh,
 				nullptr
@@ -1187,6 +1191,23 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 				printf("%02x ", *(byte_array + i));
 			std::cout << std::endl;
 			delete[] byte_array;
+			break;
+		}
+		case treat_variant::char_string:
+		{
+			CHAR* char_array = new CHAR[massive_lengh];
+			std::cout << type << " " << argument_name << " = ";
+			ReadProcessMemory(
+				this->debugee_handle,
+				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
+				char_array,
+				sizeof(CHAR) * massive_lengh,
+				nullptr
+			);
+			for (int i = 0; i < massive_lengh; i++)
+				printf("%c", *(char_array + i));
+			std::cout << std::endl;
+			delete[] char_array;
 			break;
 		}
 		default:

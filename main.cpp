@@ -26,6 +26,9 @@ int main(int argc, char** argv) {
 			if (wcscmp(szArglist[i], L"-t") == 0) {
 				debugger.Tracing(true);
 			}
+			else if (wcscmp(szArglist[i], L"-tb") == 0) {
+				debugger.BaseTracing(true);
+			}
 			else if (wcscmp(szArglist[i], L"-f") == 0) {
 				debugger.Functions(true);
 			}

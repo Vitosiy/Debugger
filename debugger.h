@@ -109,7 +109,7 @@ const std::map<std::string, std::vector<std::string>> tracing_structures_with_ar
 	{"SYSTEM_BASIC_INFORMATION", {
 		"BYTE Reserved1[24]",
 		"PVOID Reserved2[4]",
-		"CCHAR  NumberOfProcessors",
+		"CCHAR NumberOfProcessors",
 	}},
 	{"SYSTEM_PERFORMANCE_INFORMATION", {
 		"BYTE Reserved1[312]",
@@ -163,22 +163,23 @@ const std::map<std::string, std::vector<std::string>> tracing_structures_with_ar
 
 enum class treat_variant {
 	number,
+	lnumber,
 	byte,
-	pvoid_t,
-	pulong_t,
+	pointer,
+	lpointer,
 	system_information,
-	cchar
+	char_string
 };
 
 const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> entities = {
 	{"SYSTEM_INFORMATION_CLASS", {{}, treat_variant::system_information}},
-	{"PVOID", {{}, treat_variant::pvoid_t}},
-	{"ULONG", {{}, treat_variant::number}},
-	{"PULONG", {{}, treat_variant::pulong_t}},
 	{"BYTE", {{}, treat_variant::byte}},
+	{"PVOID", {{}, treat_variant::pointer}},
+	{"PULONG", {{}, treat_variant::lpointer}},
+	{"ULONG", {{}, treat_variant::lnumber}},
 	{"LARGE_INTEGER", {{}, treat_variant::number}},
-	{"CCHAR", {{}, treat_variant::cchar}},
 	{"SIZE_T", {{}, treat_variant::number}},
+	{"CCHAR", {{}, treat_variant::char_string}},
 };
 
 /*
@@ -204,6 +205,7 @@ const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> 
 class Debugger {
 private:
 	bool tracing;
+	bool base_tracing;
 	bool lib_tracing;
 	bool fun_tracing;
 	bool passed_return;
@@ -248,6 +250,7 @@ private:
 public:
 	Debugger() {
 		tracing = false;
+		base_tracing = false;
 		lib_tracing = false;
 		fun_tracing = false;
 		debugging = false;
@@ -258,6 +261,7 @@ public:
 
 	std::ofstream _debug_stream;
 	void Tracing(const bool tracing);
+	void BaseTracing(const bool tracing);
 	void Libs(const bool tracing);
 	void Functions(const bool tracing);
 	bool Target(const std::wstring& path);
