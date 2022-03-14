@@ -211,6 +211,7 @@ private:
 	bool passed_return;
 	bool debugging;
 	HANDLE debugee_handle;
+	DWORD_PTR* restored_adress;
 
 	std::map<void*, std::wstring> dll;
 	std::vector<Dword> threads;
@@ -230,6 +231,7 @@ private:
 	Dword EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_DEBUG_INFO info);
 
 	void InsertDLL(void* addr, std::wstring name);
+	void SetDLLBreakpoints();
 	void ModificateThreadContext(HANDLE& thread, PVOID& exception_address, char saved_byte, CONTEXT& _ctx);
 	void SetNextBreakpoint(PVOID& exception_address, char*& buf, char assembly_buffer[], char hex_buffer[], BreakPoint second);
 	void DeleteDLL(void* addr);
@@ -257,6 +259,7 @@ public:
 		passed_return = false;
 		debugee_handle = NULL;
 		_debug_stream = std::ofstream("debug.txt", std::ios::out);
+		restored_adress = 0;
 	}
 
 	std::ofstream _debug_stream;
