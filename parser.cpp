@@ -1,5 +1,4 @@
 #include "parser.h"
-
 const std::map<std::string, unsigned int> Expr::priors = {
 		{"+", 10}, {"-", 10}, {"*", 20}
 };

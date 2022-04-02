@@ -6,6 +6,7 @@
 #include <string.h>
 #include <psapi.h>
 #include <strsafe.h>
+#include <cctype>
 
 #include <string>
 #include <list>
@@ -47,7 +48,8 @@ enum BreakPointType {
 	SAVE_BREAKPOINT,
 	INITIAL_BREAKPOINT,
 	FUNCTION_RETURN_BREAKPOINT,
-	LIB_FUNCTION_BREAKPOINT
+	LIB_FUNCTION_BREAKPOINT,
+	CONTINUE_POINT
 };
 
 struct BreakPoint {
@@ -231,6 +233,8 @@ private:
 	Dword EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_DEBUG_INFO info);
 
 	void InsertDLL(void* addr, std::wstring name);
+	bool IsNtdllImage(void* address);
+	DWORD GetSizeDllInVirtualMemory(void* dllAddr);
 	void SetDLLBreakpoints();
 	void ModificateThreadContext(HANDLE& thread, PVOID& exception_address, char saved_byte, CONTEXT& _ctx);
 	void SetNextBreakpoint(PVOID& exception_address, char*& buf, char assembly_buffer[], char hex_buffer[], BreakPoint second);

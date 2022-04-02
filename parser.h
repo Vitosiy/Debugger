@@ -8,6 +8,7 @@
 #include <functional>
 #include <regex>
 #include <optional>
+#include <cctype>
 
 #include <Windows.h>
 

@@ -77,7 +77,7 @@ void Debugger::Debug() {
 
 		ctx.ContextFlags = CONTEXT_ALL;
 
-		if (!WaitForDebugEventEx(&event, INFINITE)) {
+		if (!WaitForDebugEvent(&event, INFINITE)) {
 			break;
 		}
 
@@ -95,7 +95,7 @@ void Debugger::Debug() {
 #if _WIN64
 			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
 #else
-			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress , INITIAL_BREAKPOINT, nullptr);
+			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress - 0x331, INITIAL_BREAKPOINT, nullptr);
 #endif // _WIN64
 
 			break;
@@ -315,7 +315,10 @@ void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG
 }
 
 void Debugger::EventUnloadDll(const Dword& pid, const Dword& tid, LPUNLOAD_DLL_DEBUG_INFO info) {
-	std::cout << "UnloadDLL @ " << info->lpBaseOfDll << "!" << std::endl;
+	std::cout << "UnloadDLL @ ";
+	std::wcout << this->dll[info->lpBaseOfDll];
+	std::cout << "!" << std::endl;
+
 	std::cout << "PID: " << std::hex << pid << std::endl;
 	std::cout << "TID: " << std::hex << tid << std::endl;
 
@@ -334,9 +337,9 @@ void Debugger::EventUnloadDll(const Dword& pid, const Dword& tid, LPUNLOAD_DLL_D
 }
 
 void Debugger::EventOutputDebugString(const Dword& pid, const Dword& tid, LPOUTPUT_DEBUG_STRING_INFO info) {
-	std::string info_string = std::string(info->nDebugStringLength, 0);
-	ReadProcessMemory(this->debugee_handle, info->lpDebugStringData, &info_string, info->nDebugStringLength, nullptr);
-	std::cout << "Debug string: " << info_string << std::endl;
+	std::wstring info_string = std::wstring(info->nDebugStringLength, 0);
+	ReadProcessMemory(this->debugee_handle, &info->lpDebugStringData, &info_string, info->nDebugStringLength, nullptr);
+	std::wcout << "Debug string: " << info_string << std::endl;
 	std::cout << "PID: " << std::hex << pid << std::endl;
 	std::cout << "TID: " << std::hex << tid << std::endl;
 }
@@ -361,13 +364,13 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
 		if (lib_tracing) {
 			if (found != this->breakpoints.end() && found->second.type == LIB_FUNCTION_BREAKPOINT) {
-				/*for (auto it = this->threads.begin(); it != this->threads.end(); ++it) {
-					if ((*it) != tid) {
-						HANDLE thr = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
-						SuspendThread(thr);
-						CloseHandle(thr);
-					}
-				}*/
+				//for (auto it = this->threads.begin(); it != this->threads.end(); ++it) {
+				//	if ((*it) != tid) {
+				//		HANDLE thr = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
+				//		SuspendThread(thr);
+				//		CloseHandle(thr);
+				//	}
+				//}				
 
 				std::cout << "DLL's function @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
 				std::cout << "PID: " << std::hex << pid << std::endl;
@@ -460,11 +463,19 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				break;
 			}
 
-			if (lib_tracing) {
-				SetDLLBreakpoints();
+			ctx.ContextFlags = CONTEXT_ALL;
+			GetThreadContext(thread, &ctx);
+			ctx.EIP--;				//возвращаемся на инструкцию назад, т.е. в EIP будет адрес текущей инструкции
+
+			if (base_tracing) {
+				ctx.EFlags |= 0x100;
 			}
 
-			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+			SetThreadContext(thread, &ctx);
+			WriteProcessMemory(this->debugee_handle, exception_address, &found->second.saved_byte, 1, nullptr);
+			FlushInstructionCache(this->debugee_handle, exception_address, 1);
+
+			//ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
 			//CONTEXT ctx = {0};
 			//ctx.ContextFlags = CONTEXT_ALL;
 			//GetThreadContext(thread, &ctx);
@@ -475,15 +486,18 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			//FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
 			this->breakpoints.erase(found);
 
-			if (base_tracing) {
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-				ctx.EFlags |= 0x100;
-				SetThreadContext(thread, &ctx);
-			}
-
 			this->debugging = true;
+
+			if (lib_tracing) {
+				SetDLLBreakpoints();
+			}
 		}
+
+		/*if (found != this->breakpoints.end() && found->second.type == CONTINUE_POINT) {
+			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+			std::cout << "CONTINUE" << std::endl;
+			this->breakpoints.erase(found);
+		}*/
 		break;
 	}
 
@@ -494,45 +508,42 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 	{
 		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
 
-		if (base_tracing) {
-			ctx.ContextFlags = CONTEXT_ALL;
-			GetThreadContext(thread, &ctx);
-			ctx.EFlags |= 0x100;
-			SetThreadContext(thread, &ctx);
-		}
-
-		/*if (found != this->breakpoints.end() && found->second.type == LIB_FUNCTION_BREAKPOINT) {
-			std::cout << "Ahtung!" << std::endl;
+		/*if (IsNtdllImage(info->ExceptionRecord.ExceptionAddress)) {
+			std::cout << "CALL NTDLL\t" << info->ExceptionRecord.ExceptionAddress
+				<< "\t" << std::left << std::setw(40) << assembly_buffer
+				<< std::setw(30) << hex_buffer << std::setw(10) << found->second.prev.size << std::endl;
+			std::cout << "BEFORE\t" << found->second.prev.addr << "\tAFTER\t" << (size_t)found->second.prev.addr + found->second.prev.size << std::endl;
+			SetBreakpoint((found->second.prev.addr + found->second.prev.size), CONTINUE_POINT, nullptr);
+			break;
 		}*/
+
+		//if (base_tracing) {
+		//	ctx.ContextFlags = CONTEXT_ALL;
+		//	GetThreadContext(thread, &ctx);
+		//	ctx.EFlags |= 0x100;
+		//	SetThreadContext(thread, &ctx);
+		//}
 
 		if (this->restored_adress != 0) {
 			// Возвращаем 0xCC
 			WriteProcessMemory(this->debugee_handle, this->restored_adress, "\xCC", 1, nullptr);
 			FlushInstructionCache(this->debugee_handle, this->restored_adress, 1);
 
+			if (!base_tracing) {
+				ctx.ContextFlags = CONTEXT_ALL;
+				GetThreadContext(thread, &ctx);
+				ctx.EFlags &= 0xFEFF;
+				SetThreadContext(thread, &ctx);
+			}
+
 			this->restored_adress = 0;
 		}
 
-		//if (found != this->breakpoints.end() && found->second.type == SAVE_BREAKPOINT) {
-
-		//	// Возвращаем 0xCC
-		//	WriteProcessMemory(this->debugee_handle, found->second.prev->addr, "\xCC", 1, nullptr);
-		//	FlushInstructionCache(this->debugee_handle, found->second.prev->addr, 1);
-
-		//	// Восстанавливаем байт под SAVE_BREAKPOINT
-		//	WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-		//	FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
-
-		//	this->breakpoints.erase(found);
-
-		//	for (auto it = this->threads.begin(); it != this->threads.end(); ++it) {
-		//		HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
-		//		auto val = ResumeThread(thread);
-		//		CloseHandle(thread);
-		//	}
-		//}
-
 		if (base_tracing) {
+			ctx.ContextFlags = CONTEXT_ALL;
+			GetThreadContext(thread, &ctx);
+			ctx.EFlags |= 0x100;
+			SetThreadContext(thread, &ctx);
 
 			buf = new char[16];
 			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
@@ -542,7 +553,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			std::transform(assembly_string.begin(), assembly_string.end(), assembly_string.begin(), ::toupper);
 
 
-			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
+			if (assembly_string.rfind("CALL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
 				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -658,17 +669,25 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 	{
 		std::cout << "Unhandled exception @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
 
+		std::cout << "PID: " << std::hex << pid << std::endl;
+		std::cout << "TID: " << std::hex << tid << std::endl;
+
 		buf = new char[16];
 		ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 		DisasInstruction((unsigned char*)buf, 16, (unsigned int)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
 		std::cout << "Instruction: " << assembly_buffer << std::endl;
 		std::cout << "Exception Code: " << std::hex << info->ExceptionRecord.ExceptionCode << std::endl;
 
+
+		ctx.ContextFlags = CONTEXT_ALL;
+		GetThreadContext(thread, &ctx);
+		PrintRegisterContext(&ctx);
+
 		delete[] buf;
 		CloseHandle(thread);
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
-	}
+	}	
 	CloseHandle(thread);
 	return DBG_EXCEPTION_HANDLED;
 }
@@ -786,12 +805,31 @@ void Debugger::SetDLLBreakpoints() {
 		ReadProcessMemory(this->debugee_handle, (LPCVOID)((size_t)base + expdir.AddressOfNames),
 			name_buffer, expdir.NumberOfNames * sizeof(DWORD), nullptr);
 
+		//const std::map<int, bool> exception_function_addres = {
+		//	{0x77621FD0, true},
+		//	{0x776250F0, true},
+		//	{0x75C94F00, true}, //ImmGetImeInfoEx
+		//	{0x0074FD33, true},
+		//	{0x75C92490, true},
+		//	{0x0076336A, true},
+		//	{0x0077FD0A, true},
+		//	{0x77625AC0, true},
+		//	{0x77623BB0, true},
+		//	{0x75B266A0, true}, //GdiReleaseDC
+		//};
+
+
 		for (DWORD i = 0; i < expdir.NumberOfNames; ++i) {
 			char s[128] = { 0 };
 
 			ReadProcessMemory(this->debugee_handle, (LPCVOID)((size_t)base + name_buffer[i]), s, 128, nullptr);
 			auto function_address = (void*)((size_t)base + func_buffer[ord_buffer[i]]);
-			std::cout << s << " -> " << std::hex << function_address << std::endl;
+
+			/*auto &find_res = exception_function_addres.find((int)function_address);
+			if (find_res != exception_function_addres.end())
+				continue;*/
+
+			//std::cout << s << " -> " << std::hex << function_address << std::endl;
 
 			SetBreakpoint(function_address, LIB_FUNCTION_BREAKPOINT, nullptr);
 			this->lib_breakpoints[function_address] = LibFunctionBreakpoint{ dll_addr.second, s, function_address };
@@ -802,6 +840,42 @@ void Debugger::SetDLLBreakpoints() {
 		delete[] name_buffer;
 	}
 };
+
+DWORD Debugger::GetSizeDllInVirtualMemory(void* dllAddr) {
+
+	IMAGE_DOS_HEADER doshead;
+	ReadProcessMemory(this->debugee_handle,
+		dllAddr,
+		&doshead,
+		sizeof(IMAGE_DOS_HEADER),
+		nullptr);
+	if (doshead.e_magic != IMAGE_DOS_SIGNATURE) {
+		return NULL;
+	}
+
+	IMAGE_NT_HEADERS nthead;
+	ReadProcessMemory(this->debugee_handle,
+		(void*)((size_t)dllAddr + doshead.e_lfanew),
+		&nthead,
+		sizeof(IMAGE_NT_HEADERS),
+		nullptr);
+	if (nthead.Signature != IMAGE_NT_SIGNATURE || nthead.OptionalHeader.NumberOfRvaAndSizes <= 0) {
+		return NULL;
+	}
+
+	return nthead.OptionalHeader.SizeOfImage;
+}
+
+bool Debugger::IsNtdllImage(void* address) {
+
+	for (const auto dll : this->dll) {
+		//std::cout << "DLL: " << dll.first << " " << dll.second << " \tEIP: " << address << std::endl;
+		if ((size_t)dll.first <= (size_t)address && ((size_t)dll.first + GetSizeDllInVirtualMemory(dll.first)) >= (size_t)address) {
+			return true;
+		}
+	}
+	return false;
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -1140,8 +1214,10 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			}
 			if (info_class != 0xffffffff) {
 				const auto& findres = id_system_information_class.find(info_class);
-				if (findres == std::end(id_system_information_class))
-					throw new std::exception();
+				if (findres == std::end(id_system_information_class)) {
+					//throw new std::exception();
+					break;
+				}
 				auto [struct_id, struct_name] = *id_system_information_class.find(info_class);
 				std::cout << struct_name << std::endl;
 				info_class = 0xffffffff;
