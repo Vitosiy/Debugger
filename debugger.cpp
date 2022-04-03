@@ -95,7 +95,7 @@ void Debugger::Debug() {
 #if _WIN64
 			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
 #else
-			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress - 0x331, INITIAL_BREAKPOINT, nullptr);
+			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
 #endif // _WIN64
 
 			break;
@@ -380,6 +380,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				std::wcout << lib_breakpoints[info->ExceptionRecord.ExceptionAddress].lib_name << std::endl;
 
 				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+				this->restored_adress = (DWORD_PTR*)exception_address;
 				/*CONTEXT ctx = {0};
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -441,6 +442,16 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			}
 		}
 
+		if (found != this->breakpoints.end() && found->second.type == CONTINUE_POINT) {
+			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+			buf = new char[16];
+			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
+			DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
+			std::cout << "CONTINUE" << std::endl;
+
+			this->breakpoints.erase(found);
+		}
+
 		/*if (found != this->breakpoints.end() && found->second.type == FUNCTION_RETURN_BREAKPOINT) {
 
 			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
@@ -492,12 +503,6 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				SetDLLBreakpoints();
 			}
 		}
-
-		/*if (found != this->breakpoints.end() && found->second.type == CONTINUE_POINT) {
-			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
-			std::cout << "CONTINUE" << std::endl;
-			this->breakpoints.erase(found);
-		}*/
 		break;
 	}
 
@@ -507,15 +512,6 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 #endif
 	{
 		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
-
-		/*if (IsNtdllImage(info->ExceptionRecord.ExceptionAddress)) {
-			std::cout << "CALL NTDLL\t" << info->ExceptionRecord.ExceptionAddress
-				<< "\t" << std::left << std::setw(40) << assembly_buffer
-				<< std::setw(30) << hex_buffer << std::setw(10) << found->second.prev.size << std::endl;
-			std::cout << "BEFORE\t" << found->second.prev.addr << "\tAFTER\t" << (size_t)found->second.prev.addr + found->second.prev.size << std::endl;
-			SetBreakpoint((found->second.prev.addr + found->second.prev.size), CONTINUE_POINT, nullptr);
-			break;
-		}*/
 
 		//if (base_tracing) {
 		//	ctx.ContextFlags = CONTEXT_ALL;
@@ -528,32 +524,35 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			// Возвращаем 0xCC
 			WriteProcessMemory(this->debugee_handle, this->restored_adress, "\xCC", 1, nullptr);
 			FlushInstructionCache(this->debugee_handle, this->restored_adress, 1);
-
-			if (!base_tracing) {
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-				ctx.EFlags &= 0xFEFF;
-				SetThreadContext(thread, &ctx);
-			}
-
 			this->restored_adress = 0;
 		}
 
 		if (base_tracing) {
-			ctx.ContextFlags = CONTEXT_ALL;
-			GetThreadContext(thread, &ctx);
-			ctx.EFlags |= 0x100;
-			SetThreadContext(thread, &ctx);
-
 			buf = new char[16];
 			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
-			DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
+			if (IsNtdllImage(info->ExceptionRecord.ExceptionAddress)) {
+				std::cout << "CALL NTDLL\t" << info->ExceptionRecord.ExceptionAddress
+					<< "\t" << std::left << std::setw(40) << assembly_buffer
+					<< std::setw(30) << hex_buffer << std::setw(10) << before.size << std::endl;
+				std::cout << "BEFORE\t" << before.address << "\tAFTER\t" << (size_t)before.address + before.size << std::endl;
+				SetBreakpoint((void*)((size_t)before.address + before.size), BreakPointType::CONTINUE_POINT, nullptr);
+				break;
+			}
+			else {
+				ctx.ContextFlags = CONTEXT_ALL;
+				GetThreadContext(thread, &ctx);
+				ctx.EFlags |= 0x100;
+				SetThreadContext(thread, &ctx);
+
+				before.address = info->ExceptionRecord.ExceptionAddress;
+			}
+			before.size = DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
 
 			assembly_string = assembly_buffer;
 			std::transform(assembly_string.begin(), assembly_string.end(), assembly_string.begin(), ::toupper);
 
 
-			if (assembly_string.rfind("CALL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
+			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
 				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -710,7 +709,6 @@ void Debugger::ModificateThreadContext(HANDLE& thread, PVOID& exception_address,
 	ctx.EFlags |= 0x100;	//ставим флаг процессора на трассирование
 	ctx.EIP--;				//возвращаемся на инструкцию назад, т.е. в EIP будет адрес текущей инструкции
 
-	this->restored_adress = (DWORD_PTR*)exception_address;
 	SetThreadContext(thread, &ctx);
 	WriteProcessMemory(this->debugee_handle, exception_address, &saved_byte, 1, nullptr);
 	FlushInstructionCache(this->debugee_handle, exception_address, 1);

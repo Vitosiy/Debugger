@@ -42,6 +42,11 @@ typedef unsigned long long Dword;
 #define ESP Esp
 #endif
 
+typedef struct _BeforeInstuction {
+	void* address;
+	unsigned int size;
+} BeforeInstuction, * PBeforeInstuction;
+
 
 enum BreakPointType {
 	TRACING_FUNCTION_BREAKPOINT = 0,
@@ -206,6 +211,7 @@ const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> 
 
 class Debugger {
 private:
+	BeforeInstuction before;
 	bool tracing;
 	bool base_tracing;
 	bool lib_tracing;
