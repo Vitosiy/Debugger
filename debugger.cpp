@@ -381,6 +381,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 
 				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
 				this->restored_adress = (DWORD_PTR*)exception_address;
+
 				/*CONTEXT ctx = {0};
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -422,6 +423,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				//this->ParseArguments(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
 
 				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
+				this->restored_adress = (DWORD_PTR*)exception_address;
 
 				/*CONTEXT ctx = {0};
 				ctx.ContextFlags = CONTEXT_ALL;
@@ -497,11 +499,11 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			//FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
 			this->breakpoints.erase(found);
 
-			this->debugging = true;
-
 			if (lib_tracing) {
 				SetDLLBreakpoints();
 			}
+
+			this->debugging = true;
 		}
 		break;
 	}
@@ -511,7 +513,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 	case STATUS_WX86_SINGLE_STEP:
 #endif
 	{
-		auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
+		//auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
 
 		//if (base_tracing) {
 		//	ctx.ContextFlags = CONTEXT_ALL;
@@ -527,25 +529,27 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			this->restored_adress = 0;
 		}
 
-		if (base_tracing) {
-			buf = new char[16];
-			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
-			if (IsNtdllImage(info->ExceptionRecord.ExceptionAddress)) {
-				std::cout << "CALL NTDLL\t" << info->ExceptionRecord.ExceptionAddress
-					<< "\t" << std::left << std::setw(40) << assembly_buffer
-					<< std::setw(30) << hex_buffer << std::setw(10) << before.size << std::endl;
-				std::cout << "BEFORE\t" << before.address << "\tAFTER\t" << (size_t)before.address + before.size << std::endl;
-				SetBreakpoint((void*)((size_t)before.address + before.size), BreakPointType::CONTINUE_POINT, nullptr);
-				break;
-			}
-			else {
-				ctx.ContextFlags = CONTEXT_ALL;
-				GetThreadContext(thread, &ctx);
-				ctx.EFlags |= 0x100;
-				SetThreadContext(thread, &ctx);
+		buf = new char[16];
+		ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 
-				before.address = info->ExceptionRecord.ExceptionAddress;
-			}
+		if (IsNtdllImage(info->ExceptionRecord.ExceptionAddress)) {
+			/*std::cout << "CALL NTDLL\t" << info->ExceptionRecord.ExceptionAddress
+				<< "\t" << std::left << std::setw(40) << assembly_buffer
+				<< std::setw(30) << hex_buffer << std::setw(10) << before.size << std::endl;
+			std::cout << "BEFORE\t" << before.address << "\tAFTER\t" << (size_t)before.address + before.size << std::endl;*/
+			SetBreakpoint((void*)((size_t)before.address + before.size), BreakPointType::CONTINUE_POINT, nullptr);
+			break;
+		}
+
+		if (base_tracing) {		
+			
+			ctx.ContextFlags = CONTEXT_ALL;
+			GetThreadContext(thread, &ctx);
+			ctx.EFlags |= 0x100;
+			SetThreadContext(thread, &ctx);
+
+			before.address = info->ExceptionRecord.ExceptionAddress;
+			
 			before.size = DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
 
 			assembly_string = assembly_buffer;
