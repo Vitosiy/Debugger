@@ -81,6 +81,8 @@ void Debugger::Debug() {
 			break;
 		}
 
+		char* adress = (char*)event.u.CreateProcessInfo.lpStartAddress;
+
 		switch (event.dwDebugEventCode) {
 		case CREATE_PROCESS_DEBUG_EVENT:
 			EventCreateProcess(event.dwProcessId, event.dwThreadId, &event.u.CreateProcessInfo);
@@ -92,10 +94,14 @@ void Debugger::Debug() {
 			if (fun_tracing) {
 				SetTracingFunctionsBreakpoints();
 			}
+
 #if _WIN64
-			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
+			SetBreakpoint(adress, INITIAL_BREAKPOINT, nullptr);
 #else
-			SetBreakpoint((char*)event.u.CreateProcessInfo.lpStartAddress, INITIAL_BREAKPOINT, nullptr);
+			if (lib_tracing) {
+				adress -= 0x331;
+			}
+			SetBreakpoint(adress, INITIAL_BREAKPOINT, nullptr);
 #endif // _WIN64
 
 			break;
@@ -304,7 +310,8 @@ void Debugger::EventExitThread(const Dword& pid, const Dword& tid, LPEXIT_THREAD
 
 void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG_INFO info) {
 	const std::wstring dll = GetFileNameFromHandle(info->hFile);
-
+	
+	std::cout << std::endl;
 	std::cout << "LoadDLL @ " << info->lpBaseOfDll << "!" << std::endl;
 	std::cout << "PID: " << std::hex << pid << std::endl;
 	std::cout << "TID: " << std::hex << tid << std::endl;
@@ -315,6 +322,7 @@ void Debugger::EventLoadDll(const Dword& pid, const Dword& tid, LPLOAD_DLL_DEBUG
 }
 
 void Debugger::EventUnloadDll(const Dword& pid, const Dword& tid, LPUNLOAD_DLL_DEBUG_INFO info) {
+	std::cout << std::endl;
 	std::cout << "UnloadDLL @ ";
 	std::wcout << this->dll[info->lpBaseOfDll];
 	std::cout << "!" << std::endl;
@@ -372,6 +380,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				//	}
 				//}				
 
+				std::cout << std::endl;
 				std::cout << "DLL's function @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
 				std::cout << "PID: " << std::hex << pid << std::endl;
 				std::cout << "TID: " << std::hex << tid << std::endl;
@@ -413,6 +422,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 					}
 				}*/
 
+				std::cout << std::endl;
 				std::cout << "Exception breakpoint @ " << info->ExceptionRecord.ExceptionAddress << std::endl;
 				std::cout << "PID: " << std::hex << pid << std::endl;
 				std::cout << "TID: " << std::hex << tid << std::endl;
@@ -449,7 +459,8 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			buf = new char[16];
 			ReadProcessMemory(this->debugee_handle, info->ExceptionRecord.ExceptionAddress, buf, 16, nullptr);
 			DisasInstruction((unsigned char*)buf, 16, (size_t)info->ExceptionRecord.ExceptionAddress, assembly_buffer, hex_buffer);
-			std::cout << "CONTINUE" << std::endl;
+			//std::cout << "CONTINUE" << std::endl;
+			before.address = info->ExceptionRecord.ExceptionAddress;
 
 			this->breakpoints.erase(found);
 		}
@@ -557,6 +568,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 
 
 			if (assembly_string.rfind("ROL", 0) == 0 || assembly_string.rfind("ROR", 0) == 0) {
+				std::cout << std::endl;
 				std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 				ctx.ContextFlags = CONTEXT_ALL;
 				GetThreadContext(thread, &ctx);
@@ -626,7 +638,6 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				if (this->passed_return) {
 					ctx.ContextFlags = CONTEXT_ALL;
 					GetThreadContext(thread, &ctx);
-
 					std::cout << "<RET> value: " << ctx.EAX << std::endl;
 					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 					if (this->call_stack.empty()) {
@@ -647,6 +658,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 
 
 				if (assembly_string.rfind("CALL", 0) == 0) {
+					std::cout << std::endl;
 					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 					ctx.ContextFlags = CONTEXT_ALL;
 					GetThreadContext(thread, &ctx);
@@ -655,6 +667,7 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 				}
 
 				if (assembly_string.rfind("RET", 0) == 0) {
+					std::cout << std::endl;
 					std::cout << "PID: " << std::hex << pid << " TID: " << tid << std::endl;
 					ctx.ContextFlags = CONTEXT_ALL;
 					GetThreadContext(thread, &ctx);
@@ -1079,6 +1092,7 @@ void Debugger::PrintRor(const std::string& str, const CONTEXT* ctx) {
 
 void Debugger::PrintTopItemStackInfo() {
 	const auto& top = this->call_stack.top();
+	std::cout << std::endl;
 	std::cout << "-------------------CALL INFO-------------------" << std::endl;
 	std::cout << "Function was called by this instruction: " << top.call_instruction;
 	std::cout << " @ " << top.call_address << std::endl;
