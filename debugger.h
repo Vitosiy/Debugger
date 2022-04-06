@@ -186,7 +186,7 @@ const std::map<std::string, std::pair<std::vector<std::string>, treat_variant>> 
 	{"ULONG", {{}, treat_variant::lnumber}},
 	{"LARGE_INTEGER", {{}, treat_variant::number}},
 	{"SIZE_T", {{}, treat_variant::number}},
-	{"CCHAR", {{}, treat_variant::char_string}},
+	{"CCHAR", {{}, treat_variant::byte}},
 };
 
 /*

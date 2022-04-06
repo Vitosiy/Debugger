@@ -1128,8 +1128,8 @@ void Debugger::AddCallingStackItem(const std::string call_instrtuction, const Dw
 
 void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, const std::string& searching_type = "structure") {
 
-	DWORD info_class = 0xffffffff;
-	unsigned int current_argument_number = 0;
+	BYTE info_class = 0xff;
+	DWORD_PTR current_argument_number = 0;
 
 	const auto& [function_name, arguments] = searching_type == "function" ? *tracing_functions_with_args.find(name) : *tracing_structures_with_args.find(name);
 
@@ -1160,17 +1160,18 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			std::cout << type << " " << argument_name << " = ";
 			size_t number;
 
-			ReadProcessMemory(
-				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(size_t)),
-				&number,
-				sizeof(size_t) * massive_lengh,
-				nullptr
-			);
-			for (int i = 0; i < massive_lengh; i++)
-				std::cout << "0x" << number + i << " ";
-			std::cout << std::endl;
+			for (int i = 0; i < massive_lengh; i++) {
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(size_t)),
+					&number,
+					sizeof(size_t),
+					nullptr
+				);
+				std::cout << std::hex << number;
 
+			}
+			std::cout << std::endl;
 			break;
 		}
 		case treat_variant::lnumber:
@@ -1178,28 +1179,34 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 			std::cout << type << " " << argument_name << " = ";
 			uint64_t number;
 
-			ReadProcessMemory(
-				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-				&number,
-				sizeof(uint64_t) * massive_lengh,
-				nullptr
-			);
-			std::cout << std::hex << number << std::endl;
+			for (int i = 0; i < massive_lengh; i++) {
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(uint64_t)),
+					&number,
+					sizeof(uint64_t),
+					nullptr
+				);
+				std::cout << std::hex << number;
+
+			}
+			std::cout << std::endl;
 			break;
 		}
 		case treat_variant::system_information:
 		{
 			std::cout << type << " " << argument_name << " = ";
 
+			int size = sizeof(DWORD_PTR);
+
 			ReadProcessMemory(
 				this->debugee_handle,
 				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
 				&info_class,
-				sizeof(DWORD_PTR),
+				sizeof(BYTE),
 				nullptr
 			);
-			std::cout << std::hex << info_class << std::endl;
+			std::cout << (int)info_class << std::endl;
 
 			break;
 		}
@@ -1207,119 +1214,105 @@ void Debugger::ParseArguments(const SIZE_T adress, const std::string& name, cons
 		{
 			std::cout << type << " " << argument_name << " = ";
 
-			DWORD_PTR* info_ptr;
-			if (massive_lengh > 1) {
-				info_ptr = new DWORD_PTR[massive_lengh];
+			if (info_class != 0xff) {
+				DWORD_PTR number;
+
 				ReadProcessMemory(
 					this->debugee_handle,
 					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-					info_ptr,
-					sizeof(DWORD_PTR) * massive_lengh,
+					&number,
+					sizeof(DWORD_PTR),
 					nullptr
 				);
-			}
-			else
-			{
-				ReadProcessMemory(
-					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-					&info_ptr,
-					sizeof(DWORD_PTR)* massive_lengh,
-					nullptr
-				);
-			}
-			if (info_class != 0xffffffff) {
+
 				const auto& findres = id_system_information_class.find(info_class);
 				if (findres == std::end(id_system_information_class)) {
-					//throw new std::exception();
-					break;
+					std::cout << "ERROR!" << std::endl;
+					return;
 				}
 				auto [struct_id, struct_name] = *id_system_information_class.find(info_class);
 				std::cout << struct_name << std::endl;
-				info_class = 0xffffffff;
-				this->ParseArguments((DWORD_PTR)info_ptr, struct_name);
+				info_class = 0xff;
+
+				if (number == 0) {
+					std::cout << "WRONG ADRESS! ERROR!" << std::endl;
+					return;
+				}
+				this->ParseArguments(number, struct_name);
 			}
 			else {
-				for (int i = 0; i < massive_lengh; i++)
-					std::cout << "0x" << *(info_ptr + i) << " ";
+				DWORD_PTR number;
+
+				for (int i = 0; i < massive_lengh; i++) {
+					ReadProcessMemory(
+						this->debugee_handle,
+						(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(DWORD_PTR)),
+						&number,
+						sizeof(DWORD_PTR),
+						nullptr
+					);
+					printf(" 0x%x ", number);
+
+				}
 				std::cout << std::endl;
 			}
-
-			if (massive_lengh > 1)
-				delete[] info_ptr;
-
 			break;
 		}
 		case treat_variant::lpointer:
 		{
 			std::cout << type << " " << argument_name << " = ";
 
-			if (massive_lengh > 1) {
-				uint64_t* long_pointer = new uint64_t[massive_lengh];
+			uint64_t number;
+
+			for (int i = 0; i < massive_lengh; i++) {
 				ReadProcessMemory(
 					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-					long_pointer,
-					2 * sizeof(uint64_t) * massive_lengh,
-					nullptr
-				);
-
-				for (int i = 0; i < massive_lengh; i++)
-					std::cout << "0x" << *(long_pointer + i) << " ";
-				std::cout << std::endl;
-
-				delete[] long_pointer;
-			}
-			else
-			{
-				uint64_t long_pointer;
-
-				ReadProcessMemory(
-					this->debugee_handle,
-					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-					&long_pointer,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(uint64_t)),
+					&number,
 					sizeof(uint64_t),
 					nullptr
 				);
-
-				std::cout << "0x" << long_pointer << std::endl;
+				printf(" 0x%x ", number);
 
 			}
+			std::cout << std::endl;
 
 			break;
 		}
 		case treat_variant::byte:
 		{
-			BYTE* byte_array = new BYTE[massive_lengh];
 			std::cout << type << " " << argument_name << " = ";
-			ReadProcessMemory(
-				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-				byte_array,
-				sizeof(BYTE) * massive_lengh,
-				nullptr
-			);
-			for (int i = 0; i < massive_lengh; i++)
-				printf("%02x ", *(byte_array + i));
+			BYTE number;
+
+			for (int i = 0; i < massive_lengh; i++) {
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(BYTE)),
+					&number,
+					sizeof(BYTE),
+					nullptr
+				);
+				printf("%02x ", number);
+			}
 			std::cout << std::endl;
-			delete[] byte_array;
 			break;
 		}
 		case treat_variant::char_string:
 		{
-			CHAR* char_array = new CHAR[massive_lengh];
 			std::cout << type << " " << argument_name << " = ";
-			ReadProcessMemory(
-				this->debugee_handle,
-				(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR)),
-				char_array,
-				sizeof(CHAR) * massive_lengh,
-				nullptr
-			);
-			for (int i = 0; i < massive_lengh; i++)
-				printf("%c", *(char_array + i));
+			CCHAR number;
+
+			for (int i = 0; i < massive_lengh; i++) {
+				ReadProcessMemory(
+					this->debugee_handle,
+					(LPCVOID)(adress + current_argument_number * sizeof(DWORD_PTR) + i * sizeof(CCHAR)),
+					&number,
+					sizeof(CCHAR),
+					nullptr
+				);
+				std::cout << std::hex << (int)number;
+			}
 			std::cout << std::endl;
-			delete[] char_array;
 			break;
 		}
 		default:
