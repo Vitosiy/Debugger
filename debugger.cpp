@@ -955,32 +955,32 @@ void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 #endif
 }
 
-void Debugger::PrintFunctionCall(const std::string& name, std::vector<size_t> arguments, size_t result) {
-	std::cout << "Traced function called: " << name.c_str() << std::endl;
-	std::vector<std::string> formatted_args;
-
-	auto format = [](std::string name, std::string value) {
-		std::stringstream s;
-		s << name << "\tValue: " << value;
-		return s.str();
-	};
-
-	const auto args = tracing_functions_with_args.find(name);
-	if (args != tracing_functions_with_args.end()) {
-		unsigned int i = 0;
-		for (const auto arg : args->second) {
-			formatted_args.push_back(format(arg, std::to_string(arguments[i])));
-			i++;
-		}
-	}
-
-	std::cout << "Arguments:" << std::endl;
-	for (size_t i = 0; i < formatted_args.size(); ++i) {
-		std::cout << "Argument # " << i << ": " << formatted_args[i] << std::endl;
-	}
-
-	std::cout << "Return value: " << result << std::endl;
-}
+//void Debugger::PrintFunctionCall(const std::string& name, std::vector<size_t> arguments, size_t result) {
+//	std::cout << "Traced function called: " << name.c_str() << std::endl;
+//	std::vector<std::string> formatted_args;
+//
+//	auto format = [](std::string name, std::string value) {
+//		std::stringstream s;
+//		s << name << "\tValue: " << value;
+//		return s.str();
+//	};
+//
+//	const auto args = tracing_functions_with_args.find(name);
+//	if (args != tracing_functions_with_args.end()) {
+//		unsigned int i = 0;
+//		for (const auto arg : args->second) {
+//			formatted_args.push_back(format(arg, std::to_string(arguments[i])));
+//			i++;
+//		}
+//	}
+//
+//	std::cout << "Arguments:" << std::endl;
+//	for (size_t i = 0; i < formatted_args.size(); ++i) {
+//		std::cout << "Argument # " << i << ": " << formatted_args[i] << std::endl;
+//	}
+//
+//	std::cout << "Return value: " << result << std::endl;
+//}
 
 void Debugger::PrintCallInstruction(CONTEXT ctx, void* address, const std::string& inst) {
 	const size_t arguments_count = 6;
@@ -1107,9 +1107,9 @@ void Debugger::PrintTopItemStackInfo() {
 		std::cout << reg << " -> " << value << std::endl;
 	}
 
-	if (top.current_call_accessed_less_than_8_bytes_ebp) {
+	/*if (top.current_call_accessed_less_than_8_bytes_ebp) {
 		std::cout << "Function's stack frame is not aligned" << std::endl;
-	}
+	}*/
 
 	std::cout << "After return EAX contains: " << top.returned_value << std::endl;
 }
