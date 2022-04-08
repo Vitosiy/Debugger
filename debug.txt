@@ -1,0 +1,47 @@
+mov ecx, [0xd59078] :00D41689:42d8
+push esi :00D4168F:42d8
+push edi :00D41690:42d8
+mov edi, 0xbb40e64e :00D41691:42d8
+mov esi, 0xffff0000 :00D41696:42d8
+cmp ecx, edi :00D4169B:42d8
+jz 0xd416a3 :00D4169D:42d8
+test esi, ecx :00D4169F:42d8
+jnz 0xd416c9 :00D416A1:42d8
+not ecx :00D416C9:42d8
+pop edi :00D416CB:42d8
+mov [0xd59074], ecx :00D416CC:42d8
+pop esi :00D416D2:42d8
+ret :00D416D3:42d8
+jmp 0xd4125f :00D413E6:42d8
+push 0x14 :00D4125F:42d8
+push 0xd57ee0 :00D41261:42d8
+call 0xd41980 :00D41266:42d8
+push 0xd41d20 :00D41980:42d8
+push dword [fs:0x0] :00D41985:42d8
+mov eax, [esp+0x10] :00D4198C:42d8
+mov [esp+0x10], ebp :00D41990:42d8
+lea ebp, [esp+0x10] :00D41994:42d8
+sub esp, eax :00D41998:42d8
+push ebx :00D4199A:42d8
+push esi :00D4199B:42d8
+push edi :00D4199C:42d8
+mov eax, [0xd59078] :00D4199D:42d8
+xor [ebp-0x4], eax :00D419A2:42d8
+xor eax, ebp :00D419A5:42d8
+push eax :00D419A7:42d8
+mov [ebp-0x18], esp :00D419A8:42d8
+push dword [ebp-0x8] :00D419AB:42d8
+mov eax, [ebp-0x4] :00D419AE:42d8
+mov dword [ebp-0x4], 0xfffffffe :00D419B1:42d8
+mov [ebp-0x8], eax :00D419B8:42d8
+lea eax, [ebp-0x10] :00D419BB:42d8
+mov [fs:0x0], eax :00D419BE:42d8
+ret :00D419C4:42d8
+push 0x1 :00D4126B:42d8
+call 0xd41461 :00D4126D:42d8
+push ebp :00D41461:42d8
+mov ebp, esp :00D41462:42d8
+cmp dword [ebp+0x8], 0x0 :00D41464:42d8
+jnz 0xd41471 :00D41468:42d8
+call 0xd419c5 :00D41471:42d8
+push ebp :00D419C5:42d8

@@ -65,8 +65,8 @@ Command::Command(const std::string& str) {
 		}
 		else {
 			parts[1].pop_back();
-			op1 = parts[1];
-			op2 = parts[2];
+			op2 = parts[1];
+			op1 = parts[2];
 		}
 	}
 }
