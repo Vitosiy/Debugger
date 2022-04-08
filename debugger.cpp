@@ -430,7 +430,6 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 
 				//Парсим аргументы функции
 				this->ParseArgumentsOfMyTracingFunctions(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
-				//this->ParseArguments(tid, tracing_functions[info->ExceptionRecord.ExceptionAddress]);
 
 				ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
 				this->restored_adress = (DWORD_PTR*)exception_address;
@@ -463,23 +462,21 @@ Dword Debugger::EventException(const Dword& pid, const Dword& tid, LPEXCEPTION_D
 			before.address = info->ExceptionRecord.ExceptionAddress;
 
 			this->breakpoints.erase(found);
-		}
 
-		/*if (found != this->breakpoints.end() && found->second.type == FUNCTION_RETURN_BREAKPOINT) {
+		}
+		else if (found != this->breakpoints.end() && found->second.type == FUNCTION_RETURN_BREAKPOINT) {
 
 			ModificateThreadContext(thread, exception_address, found->second.saved_byte, ctx);
-
-			CONTEXT ctx = { 0 };
 			ctx.ContextFlags = CONTEXT_ALL;
 			GetThreadContext(thread, &ctx);
-			ctx.EIP--;
-			SetThreadContext(thread, &ctx);
-			WriteProcessMemory(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, &found->second.saved_byte, 1, nullptr);
-			FlushInstructionCache(this->debugee_handle, (PVOID)info->ExceptionRecord.ExceptionAddress, 1);
-
 			size_t functionResult = ctx.EAX;
-			PrintFunctionCall(this->function_calls[info->ExceptionRecord.ExceptionAddress].name, this->function_calls[info->ExceptionRecord.ExceptionAddress].arguments, functionResult);
-		}*/
+
+			std::cout << std::endl;
+			std::cout << "Return adress: " << info->ExceptionRecord.ExceptionAddress << std::endl;
+			std::cout << "Return value: " << functionResult << std::endl;
+
+			this->breakpoints.erase(found);
+		}
 
 		if (!this->debugging) {
 			auto found = this->breakpoints.find(info->ExceptionRecord.ExceptionAddress);
@@ -954,7 +951,6 @@ void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 	std::cout << "EIP: " << ctx->Eip << std::endl;
 #endif
 }
-
 //void Debugger::PrintFunctionCall(const std::string& name, std::vector<size_t> arguments, size_t result) {
 //	std::cout << "Traced function called: " << name.c_str() << std::endl;
 //	std::vector<std::string> formatted_args;
@@ -981,7 +977,6 @@ void Debugger::PrintRegisterContext(CONTEXT* ctx) {
 //
 //	std::cout << "Return value: " << result << std::endl;
 //}
-
 void Debugger::PrintCallInstruction(CONTEXT ctx, void* address, const std::string& inst) {
 	const size_t arguments_count = 6;
 	std::cout << "CALL @ " << address << "!" << std::endl;
@@ -1332,6 +1327,11 @@ void Debugger::ParseArgumentsOfMyTracingFunctions(const Dword tid, const std::st
 	SIZE_T adress = ctx.ESP + sizeof(size_t);
 
 	this->ParseArguments(adress, name, "function");
+
+	DWORD_PTR ret_addr = 0;
+	ReadProcessMemory(this->debugee_handle, (LPCVOID)ctx.ESP, &ret_addr, sizeof(DWORD_PTR), nullptr);
+	SetBreakpoint((void*)ret_addr, FUNCTION_RETURN_BREAKPOINT, nullptr);
+	CloseHandle(thread);
 }
 
 
